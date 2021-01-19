@@ -70,6 +70,23 @@ otherwise evaluate BODY."
 (defparameter *advice-hash-table* (make-hash-table)
   "The default database for advisable-function objects")
 
+(add-advice (:before :before) test (&ignore)
+	    )
+
+(defun %add-advice (qualifiers-qualifier qualifier name generated-fn db)
+  (with-advisable-object (obj name db)
+    (case qualifier
+      (:before
+       (let ((b4 (advisable-function-before obj)))
+	 (if b4
+	     (setf (advisable-function-before obj)
+		   (lambda (&rest rest)
+		     (apply b4 rest)
+		     (apply generated-fn rest)))))))))
+
+(defmacro add-advice ((qualifiers-qualifier qualifier) name (args) &body body)
+  (with-advisable-object))
+
 (defun generate-defadvice-args-and-decls (arglist body)
   "Parse out argument list, docstring, and declarations for usage in defadvice"
   (let* ((ignore-args (equal (car arglist) '&ignore))
