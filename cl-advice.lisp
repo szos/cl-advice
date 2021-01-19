@@ -77,15 +77,34 @@ otherwise evaluate BODY."
   (with-advisable-object (obj name db)
     (case qualifier
       (:before
-       (let ((b4 (advisable-function-before obj)))
-	 (if b4
-	     (setf (advisable-function-before obj)
-		   (lambda (&rest rest)
-		     (apply b4 rest)
-		     (apply generated-fn rest)))))))))
+       (case qualifiers-qualifier
+	 (:before 
+	  (let ((b4 (advisable-function-before obj)))
+	    (setf (advisable-function-before obj)
+		  (if b4
+		      (lambda (&rest rest)
+			(apply generated-fn rest)
+			(apply b4 rest))
+		      generated-fn))))
+	 (:after
+	  (let ((b4 (advisable-function-before obj)))
+	    (setf (advisable-function-before obj)
+		  (if b4
+		      (lambda (&rest rest)
+			(apply b4 rest)
+			(apply generated-fn rest))
+		      generated-fn)))))))))
 
-(defmacro add-advice ((qualifiers-qualifier qualifier) name (args) &body body)
-  (with-advisable-object))
+(defmacro add-advice ((q-qualifier qualifier) name (args) &body body)
+  "lets write this out...
+if we have a qualifier of :around and a q-qualifier of :around, we are in the most 
+complexe case... we want to first check if theres already :around advice. if not we
+create it (as we do in defadvice). (actually, we want to create all these functions
+before we do the checking, cause the function forms need to be generated at 
+macroexpansion time, but the checks need to happen at runtime.) anyway, if no 
+:around advice exists we want to add it. but if it does, then we want to expose 
+the local macros called CALL-NEXT-ADVICE and CALL-NEXT-ADVICE-WITH-ARGS."
+  `(let ((fn))))
 
 (defun generate-defadvice-args-and-decls (arglist body)
   "Parse out argument list, docstring, and declarations for usage in defadvice"
@@ -140,24 +159,25 @@ statement."
 			  (,fboundp (fboundp ,realname)))
 	   (let* ((,db ,(if (atom name) '*advice-hash-table* (cadr name)))
 		  (,obj
-		    (or (gethash ,realname ,db)
-			(setf (gethash ,realname ,db)
-			      (make-advisable-function-object
-			       (lambda (&rest ,dispatch-args)
-				 ,(format nil "Advice dispatch function for ~A"
-					  realname)
-				 (let* ((,obj (gethash ,realname ,db))
-					(,main (advisable-function-main ,obj))
-					(,before (advisable-function-before ,obj))
-					(,after (advisable-function-after ,obj))
-					(,around (advisable-function-around ,obj)))
-				   (prog2 (when ,before
-					    (apply ,before ,dispatch-args))
-				       (if ,around
-					   (apply ,around ,dispatch-args)
-					   (apply ,main ,dispatch-args))
-				     (when ,after (apply ,after ,dispatch-args)))))
-			       (symbol-function ,realname)))))
+		    (or
+		     (gethash ,realname ,db)
+		     (setf (gethash ,realname ,db)
+			   (make-advisable-function-object
+			    (lambda (&rest ,dispatch-args)
+			      ,(format nil "Advice dispatch function for ~A"
+				       realname)
+			      (let* ((,obj (gethash ,realname ,db))
+				     (,main (advisable-function-main ,obj))
+				     (,before (advisable-function-before ,obj))
+				     (,after (advisable-function-after ,obj))
+				     (,around (advisable-function-around ,obj)))
+				(prog2 (when ,before
+					 (apply ,before ,dispatch-args))
+				    (if ,around
+					(apply ,around ,dispatch-args)
+					(apply ,main ,dispatch-args))
+				  (when ,after (apply ,after ,dispatch-args)))))
+			    (symbol-function ,realname)))))
 		  (,fn
 		    ,(if (eql qualifier :around)
 			 `(lambda (&rest ,restarg)
