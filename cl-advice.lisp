@@ -36,17 +36,40 @@
        (format s "No advice registered for symbol ~A in database ~A"
 	       symbol database)))))
 
-(defclass advisable-function ()
+(define-condition not-an-advisable-function-error
+    (no-advisable-function-found-error)
+  ()
+  (:report
+   (lambda (c s)
+     (with-slots (symbol database) c
+       (format s "Symbol ~A does not denote an advisable function in database ~A"
+	       symbol database)))))
+
+(defclass advisable-function-before-advice ()
+  ((before :initarg :before :initform nil
+	   :accessor advisable-function-before)
+   (inner-before :initarg :inner-before :initform nil
+		 :accessor advisable-function-before-inner)))
+
+(defclass advisable-function-around-advice ()
+  ((around :initarg :around :initform nil
+	   :accessor advisable-function-around)
+   (inner-around :initarg :inner-around :initform nil
+		:accessor advisable-function-around-inner)))
+
+(defclass advisable-function-after-advice ()
+  ((after  :initarg :after  :initform nil
+	   :accessor advisable-function-after)
+   (inner-after :initarg :inner-after :initform nil
+		:accessor advisable-function-after-inner)))
+
+(defclass advisable-function (advisable-function-before-advice
+			      advisable-function-around-advice
+			      advisable-function-after-advice)
   ((dispatch :initarg :dispatch :initform nil
 	     :accessor advisable-function-dispatch)
    (main   :initarg :main   :initform nil
-	   :accessor advisable-function-main)
-   (before :initarg :before :initform nil
-	   :accessor advisable-function-before)
-   (after  :initarg :after  :initform nil
-	   :accessor advisable-function-after)
-   (around :initarg :around :initform nil
-	   :accessor advisable-function-around)))
+	   :accessor advisable-function-main)))
 
 (defun make-advisable-function-object (dispatch main &key before after around)
   "Make an advisable-function object"
@@ -67,44 +90,322 @@ otherwise evaluate BODY."
 		:symbol ,designator
 		:db ,db))))
 
+(defmacro with-inner-advice ((var advice-function) &body body)
+  `(let ((,var (funcall (or ,advice-function 'not) t)))
+     ,@body))
+
 (defparameter *advice-hash-table* (make-hash-table)
   "The default database for advisable-function objects")
 
-(add-advice (:before :before) test (&ignore)
-	    )
+(defmacro make-advisable (name &key (db '*advice-hash-table*))
+  (alexandria:with-gensyms (dispatch dispatch-args d-obj main before around after)
+    `(unless (gethash ',name ,db)
+       (let ((,dispatch (lambda (&rest ,dispatch-args)
+			  ,(format nil "Advice dispatch function for ~A" name)
+			  (let* ((,d-obj (gethash ',name ,db))
+				 (,main (advisable-function-main ,d-obj))
+				 (,before (advisable-function-before ,d-obj))
+				 (,around (advisable-function-around ,d-obj))
+				 (,after (advisable-function-after ,d-obj)))
+			    (prog2 (when ,before
+				     (apply ,before (cons nil ,dispatch-args)))
+				(if ,around
+				    (apply ,around (cons nil ,dispatch-args))
+				    (apply ,main ,dispatch-args))
+			      (when ,after
+				(apply ,after (cons nil ,dispatch-args))))))))
+	 (setf (gethash ',name ,db)
+	       (make-advisable-function-object
+		,dispatch (symbol-function ',name)))))))
 
-(defun %add-advice (qualifiers-qualifier qualifier name generated-fn db)
-  (with-advisable-object (obj name db)
-    (case qualifier
-      (:before
-       (case qualifiers-qualifier
-	 (:before 
-	  (let ((b4 (advisable-function-before obj)))
-	    (setf (advisable-function-before obj)
-		  (if b4
-		      (lambda (&rest rest)
-			(apply generated-fn rest)
-			(apply b4 rest))
-		      generated-fn))))
-	 (:after
-	  (let ((b4 (advisable-function-before obj)))
-	    (setf (advisable-function-before obj)
-		  (if b4
-		      (lambda (&rest rest)
-			(apply b4 rest)
-			(apply generated-fn rest))
-		      generated-fn)))))))))
+(defmacro defadvisable (name args &body body)
+  (let ((realname (if (atom name) name (car name)))
+	(db (if (atom name) '*advice-hash-table* (cadr name))))
+    `(progn
+       (defun ,realname ,args ,@body)
+       (make-advisable ,realname ,db))))
 
-(defmacro add-advice ((q-qualifier qualifier) name (args) &body body)
-  "lets write this out...
-if we have a qualifier of :around and a q-qualifier of :around, we are in the most 
-complexe case... we want to first check if theres already :around advice. if not we
-create it (as we do in defadvice). (actually, we want to create all these functions
-before we do the checking, cause the function forms need to be generated at 
-macroexpansion time, but the checks need to happen at runtime.) anyway, if no 
-:around advice exists we want to add it. but if it does, then we want to expose 
-the local macros called CALL-NEXT-ADVICE and CALL-NEXT-ADVICE-WITH-ARGS."
-  `(let ((fn))))
+(defun pop-advice (qualifier name &key (db *advice-hash-table*))
+  (with-advisable-object (obj name :db db)
+    (let ((inner-advice (funcall (or (case qualifier
+				       (:before (advisable-function-before obj))
+				       (:around (advisable-function-around obj))
+				       (:after (advisable-function-after obj)))
+				     'not)
+				 t)))
+      (when inner-advice 
+	(case qualifier
+	  (:before
+	   (setf (advisable-function-before obj) inner-advice))
+	  (:around
+	   (setf (advisable-function-around obj) inner-advice))
+	  (:after
+	   (setf (advisable-function-after obj) inner-advice)))))))
+
+(defun make-before-*-advice-function (accessor obj args body)
+  (alexandria:with-gensyms (next-advice poparg restarg)
+    (destructuring-bind (argslist docstring declarations realbody)
+	(generate-defadvice-args-and-decls args body)
+      `(let ((,next-advice (,accessor ,obj)))
+	 (lambda (,poparg &rest ,restarg)
+	   ,@(when docstring (list docstring))
+	   (if ,poparg
+	       ,next-advice 
+	       (destructuring-bind ,argslist ,restarg
+		 ,@(when declarations (list declarations))
+		 ,@realbody
+		 (when ,next-advice 
+		   (apply ,next-advice (cons nil ,restarg))))))))))
+
+(defun make-around-*-advice-function (accessor obj args body)
+  (alexandria:with-gensyms (next-advice poparg restarg)
+    (destructuring-bind (argslist docstring declarations realbody)
+	(generate-defadvice-args-and-decls args body)
+      `(let ((,next-advice (,accessor ,obj)))
+	 (lambda (,poparg &rest ,restarg)
+	   ,@(when docstring (list docstring))
+	   (if ,poparg
+	       ,next-advice 
+	       (macrolet ((call-next-advice ()
+			    `(apply ,',next-advice ,',restarg)))
+		 (destructuring-bind ,argslist ,restarg
+		   ,@(when declarations (list declarations))
+		   ,@realbody))))))))
+
+(defun make-after-*-advice-function (accessor obj args body)
+  (alexandria:with-gensyms (next-advice poparg restarg)
+    (destructuring-bind (argslist docstring declarations realbody)
+	(generate-defadvice-args-and-decls args body)
+      `(let ((,next-advice (,accessor ,obj)))
+	 (lambda (,poparg &rest ,restarg)
+	   ,@(when docstring (list docstring))
+	   (if ,poparg
+	       ,next-advice
+	       (progn 
+		 (when ,next-advice
+		   (apply ,next-advice (cons nil ,restarg)))
+		 (destructuring-bind ,argslist ,restarg
+		   ,@(when declarations (list declarations))
+		   ,@realbody))))))))
+
+(defun make-base-advice-function (args body)
+  (alexandria:with-gensyms (poparg restarg)
+    (destructuring-bind (argslist docstring declarations realbody)
+	(generate-defadvice-args-and-decls args body)
+      `(lambda (,poparg &rest ,restarg)
+	 ,@(when docstring (list docstring))
+	 (unless ,poparg
+	   (destructuring-bind ,argslist ,restarg
+	     ,@(when declarations (list declarations))
+	     ,@realbody))))))
+
+(defun make-base-around-advice-function (obj args body)
+  (alexandria:with-gensyms (poparg restarg)
+    (destructuring-bind (argslist docstring declarations realbody)
+	(generate-defadvice-args-and-decls args body)
+      `(lambda (,poparg &rest ,restarg)
+	 ,@(when docstring (list docstring))
+	 (unless ,poparg
+	   (macrolet ((call-main-function ()
+			`(apply (advisable-function-main ,',obj) ,',restarg))
+		      (call-main-function-with-args (&rest callargs)
+			`(apply (advisable-function-main ,',obj)
+				(list ,@callargs))))
+	     (destructuring-bind ,argslist ,restarg
+	       ,@(when declarations (list declarations))
+	       ,@realbody)))))))
+
+(defun make-before-advice-function (obj q-qualifier args body)
+  (case q-qualifier
+    (:before (make-before-*-advice-function 'advisable-function-before
+					    obj args body))
+    (:around (make-around-*-advice-function 'advisable-function-before
+					    obj args body))
+    (:after (make-after-*-advice-function 'advisable-function-before
+					  obj args body))
+    (otherwise (make-base-advice-function args body))))
+
+(defun make-around-advice-function (obj q-qualifier args body)
+  (case q-qualifier
+    (:before (make-before-*-advice-function 'advisable-function-around
+					    obj args body))
+    (:around (make-around-*-advice-function 'advisable-function-around
+					    obj args body))
+    (:after (make-after-*-advice-function 'advisable-function-around
+					  obj args body))
+    (otherwise (make-base-around-advice-function obj args body))))
+
+(defun make-after-advice-function (obj q-qualifier args body)
+  (case q-qualifier
+    (:before (make-before-*-advice-function 'advisable-function-after
+					    obj args body))
+    (:around (make-around-*-advice-function 'advisable-function-after
+					    obj args body))
+    (:after (make-after-*-advice-function 'advisable-function-after
+					  obj args body))
+    (otherwise (make-base-advice-function args body))))
+
+(defun make-advice-function (obj qualifier q-qualifier args body)
+  (case qualifier
+    (:before
+     (make-before-advice-function obj q-qualifier args body))
+    (:around
+     (make-around-advice-function obj q-qualifier args body))
+    (:after
+     (make-after-advice-function obj q-qualifier args body))))
+
+(defmacro add-advice ((q-qualifier qualifier) (name db) args &body body)
+  (alexandria:with-gensyms (obj fn)
+    `(if (advisable-function-p ',name ,db)
+	 (let* ((,obj (or (gethash ',name ,db)
+			  (error 'no-advisable-function-found-error
+				 :symbol ',name :db ',db)))
+		(,fn (make-advice-function ,obj ,qualifier ,q-qualifier
+					   ,args ,body)))
+	   (setf ,@(case qualifier
+		     (:before
+		      `((advisable-function-before ,obj) ,fn))
+		     (:around
+		      `((advisable-function-around ,obj) ,fn))
+		     (:after
+		      `((advisable-function-after ,obj) ,fn)))))
+	 (error 'not-an-advisable-function-error :symbol ',name :db ',db))))
+
+;; (defmacro add-advice ((q-qualifier qualifier) (name db) args
+;; 		      &body body)
+;;   "lets write this out...
+;; if we have a qualifier of :around and a q-qualifier of :around, we are in the most 
+;; complexe case... we want to first check if theres already :around advice. if not we
+;; create it (as we do in defadvice). (actually, we want to create all these functions
+;; before we do the checking, cause the function forms need to be generated at 
+;; macroexpansion time, but the checks need to happen at runtime.) anyway, if no 
+;; :around advice exists we want to add it. but if it does, then we want to expose 
+;; the local macros called CALL-NEXT-ADVICE and CALL-NEXT-ADVICE-WITH-ARGS."
+;;   (alexandria:with-gensyms (fn obj restarg poparg next-advice)
+;;     (destructuring-bind (argslist docstring declarations realbody)
+;; 	(generate-defadvice-args-and-decls args body)
+;;       `(let* ((,obj (or (gethash ',name ,db)
+;; 			(error 'no-advisable-function-found-error
+;; 			       :symbol ',name :db ',db)))
+;; 	      (,fn ; this is disgusting... how to clean it up? 
+;; 		,(case qualifier
+;; 		   (:before
+;; 		    (case q-qualifier
+;; 		      (:before
+;; 		       `(let ((,next-advice (advisable-function-before ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(destructuring-bind ,argslist ,restarg
+;; 				  ,@(when declarations (list declarations))
+;; 				  ,@realbody
+;; 				  (when ,next-advice 
+;; 				    (apply ,next-advice (cons nil ,restarg))))))))
+;; 		      (:around
+;; 		       `(let ((,next-advice (advisable-function-before ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(macrolet ((call-next-advice ()
+;; 					     `(apply ,',next-advice ,',restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))
+;; 		      (:after
+;; 		       `(let ((,next-advice (advisable-function-before ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice
+;; 				(progn 
+;; 				  (when ,next-advice
+;; 				    (apply ,next-advice (cons nil ,restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))))
+;; 		   (:around
+;; 		    (case q-qualifier
+;; 		      (:before
+;; 		       `(let ((,next-advice (advisable-function-around ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(destructuring-bind ,argslist ,restarg
+;; 				  ,@(when declarations (list declarations))
+;; 				  ,@realbody
+;; 				  (when ,next-advice
+;; 				    (apply ,next-advice (cons nil ,restarg))))))))
+;; 		      (:around
+;; 		       `(let ((,next-advice (advisable-function-around ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(macrolet ((call-next-advice ()
+;; 					     `(apply ,',next-advice ,',restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))
+;; 		      (:after
+;; 		       `(let ((,next-advice (advisable-function-around ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice
+;; 				(progn
+;; 				  (when ,next-advice
+;; 				    (apply ,next-advice (cons nil ,restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))))
+;; 		   (:after
+;; 		    (case q-qualifier
+;; 		      (:before
+;; 		       `(let ((,next-advice (advisable-function-after ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(destructuring-bind ,argslist ,restarg
+;; 				  ,@(when declarations (list declarations))
+;; 				  ,@realbody
+;; 				  (when ,next-advice 
+;; 				    (apply ,next-advice (cons nil ,restarg))))))))
+;; 		      (:around
+;; 		       `(let ((,next-advice (advisable-function-after ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(macrolet ((call-next-advice ()
+;; 					     `(apply ,',next-advice ,',restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))
+;; 		      (:after
+;; 		       `(let ((,next-advice (advisable-function-after ,obj)))
+;; 			  (lambda (,poparg &rest ,restarg)
+;; 			    ,@(when docstring (list docstring))
+;; 			    (if ,poparg
+;; 				,next-advice 
+;; 				(progn
+;; 				  (when ,next-advice 
+;; 				    (apply ,next-advice (cons nil ,restarg)))
+;; 				  (destructuring-bind ,argslist ,restarg
+;; 				    ,@(when declarations (list declarations))
+;; 				    ,@realbody))))))
+;; 		      ))))) ; end disgusting fn gen
+;; 	 (setf
+;; 	  ,@(case qualifier
+;; 	      (:before
+;; 	       `((advisable-function-before ,obj) ,fn))
+;; 	      (:around
+;; 	       `((advisable-function-around ,obj) ,fn))
+;; 	      (:after
+;; 	       `((advisable-function-after ,obj) ,fn))))
+;; 	 (unless (equal (symbol-function ',name)
+;; 			(advisable-function-dispatch ,obj))
+;; 	   (setf (symbol-function ',name) (advisable-function-dispatch ,obj)))))))
 
 (defun generate-defadvice-args-and-decls (arglist body)
   "Parse out argument list, docstring, and declarations for usage in defadvice"
@@ -213,7 +514,7 @@ statement."
 designating advice type will remove that advice from the object. The qualifiers
 :ALL and :EVERYTHING will remove all advice. The qualifier :FMAKUNBOUND will delete
 the object from the database and unbind the function."
-  x(flet ((no-advice-p (o)
+  (flet ((no-advice-p (o)
 	   (check-type o advisable-function)
 	   (not (or (advisable-function-around o)
 		    (advisable-function-before o)
