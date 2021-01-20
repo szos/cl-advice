@@ -90,6 +90,17 @@ otherwise evaluate BODY."
 		:symbol ,designator
 		:db ,db))))
 
+(defmacro with-advisable-object-advice ((fn-var obj-var qualifier designator
+					 &key (db '*advice-hash-table*))
+					&body body)
+  `(with-advisable-object (,obj-var ,designator :db ,db)
+     (let ((,fn-var ,(case qualifier
+		       (:before `((advisable-function-before ,obj-var)))
+		       (:around `((advisable-function-around ,obj-var)))
+		       (:after `((advisable-function-after ,obj-var)))
+		       (otherwise nil))))
+       ,@body)))
+
 (defmacro with-inner-advice ((var advice-function) &body body)
   `(let ((,var (funcall (or ,advice-function 'not) t)))
      ,@body))
