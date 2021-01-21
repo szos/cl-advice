@@ -3,8 +3,11 @@ About CL-ADVICE
 This allows you to advise functions in Common Lisp. The main macros to use are
 `add-advice` and `defadvice`. `defadvice` expands into a call to `add-advice`.
 `add-advice` is used like so:
+
 `(add-advice (q-qualifier qualifier) name/db args body...)`
+
 It does the following:
+
 Define advice of type QUALIFIER for the function NAME. If an advisable-function
 object doesnt exist an error is signalled.
 
