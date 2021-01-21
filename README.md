@@ -2,6 +2,16 @@ About CL-ADVICE
 ---------------
 This allows you to advise functions in Common Lisp. The main macros to use are
 `add-advice` and `defadvice`. `defadvice` expands into a call to `add-advice`.
+
+Arbitrary ammounts of advice can be added. This is achieved by wrapping up
+pre-existing advice within the new advice function. Because of this, we can think
+of advice like a stack. We add advice by pushing advice onto the stack, and by the
+same token we can pop advice from the stack. While a macro is included to list all
+advice, it isnt useful for reorganizing advice as every advice contains references
+to the advice below it on the stack. 
+
+ADD-ADVICE
+----------
 `add-advice` is used like so:
 
 `(add-advice (q-qualifier qualifier) name/db args body...)`
@@ -65,7 +75,8 @@ Advice can be defined with `defadvice`, like so:
   (format t "~&running after test~%"))
 ```
 
-Advice can be activated and deactivated with `deactivate-advice` and `activate-advice`.
+Advice can be activated and deactivated with `deactivate-advice` and
+`activate-advice`.
 
 Advice can be deleted with `delete-advice`.
 
