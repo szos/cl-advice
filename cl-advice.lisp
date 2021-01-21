@@ -336,7 +336,7 @@ and CALL-MAIN-FUNCTION-WITH-ARGS for usage in BODY."
 
 (defmacro add-advice ((q-qualifier qualifier) name/db args &body body)
   "Define advice of type QUALIFIER for the function NAME. If an advisable-function
-object doesnt exist one will be created. 
+object doesnt exist an error is signalled.
 
 Q-QUALIFIER denotes how to wrap pre-existing advice. It can be one of :before 
 :after :around or :base. :before and :after will run their advice before and after
