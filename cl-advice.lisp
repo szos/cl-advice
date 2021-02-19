@@ -92,15 +92,15 @@
                                        (cddr var)))))))
 
 (defmacro define-advisable (name argslist rule &body body)
-  (with-gensyms (main-fn docstr)
-    `(let ((,main-fn (lambda ,argslist ,@body))
-           (,docstr (when (stringp (car body))
-                      (car body))))
+  (with-gensyms (main-fn)
+    `(let ((,main-fn (lambda ,argslist ,@body)))
        (add-advisable-function ',name
                                (make-instance 'advisable-function
                                               :main ,main-fn)
                                t)
-       (defn-adv ,name ,argslist ,rule ,docstr))))
+       (defn-adv ,name ,argslist ,rule ,@(when (and (listp body)
+                                                   (stringp (car body)))
+                                           (list (car body)))))))
 
 (defmacro make-advisable (name argslist rule)
   (with-gensyms (main-fn obj)
@@ -165,8 +165,8 @@
                                  ,@body)
                                (add-advice ,(car type) ',fn-name
                                            ',(cadr type)
-                                           ,allow-duplicates
-                                           ,(or test ''eql)))
+                                           :allow-duplicates ,allow-duplicates
+                                           :test ,(or test ''eql)))
              else 
                collect `(add-advice ,type ',fn-name
                                     (lambda
@@ -174,8 +174,8 @@
                                              (cons next-fn-arg args)
                                              args)
                                       ,@body)
-                                    ,allow-duplicates
-                                    ,(or test ''eql)))))
+                                    :allow-duplicates ,allow-duplicates
+                                    :test ,(or test ''eql)))))
 
 (defun list-advice (fn &key type print)
   (when-let1 (obj (gethash fn *advice-hash*))
