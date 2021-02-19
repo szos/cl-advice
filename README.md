@@ -1,83 +1,106 @@
-About CL-ADVICE
+CL-ADVICE
 ---------------
-This allows you to advise functions in Common Lisp. The main macros to use are
-`add-advice` and `defadvice`. `defadvice` expands into a call to `add-advice`.
+A lightweight and portable system for advising function in Common Lisp. An
+arbitrary ammount of advice can be added to any advisable function. An advisable
+function may be defined with `define-advisable`, while already defined functions
+may be made advisable with `make-advisable`. Advice may be added to an advisable
+function with `add-advice` and `advise-function`. Advice for a function may be
+listed with `list-advice`, and may be removed with `remove-advice` and
+`remove-nth-advice`.
 
-Arbitrary ammounts of advice can be added. This is achieved by wrapping up
-pre-existing advice within the new advice function. Because of this, we can think
-of advice like a stack. We add advice by pushing advice onto the stack, and by the
-same token we can pop advice from the stack. While a macro is included to list all
-advice, it isnt useful for reorganizing advice as every advice contains references
-to the advice below it on the stack. 
+### ADVICE TYPES ###
+There are three types of advice: `:BEFORE`, `:AFTER`, and `:AROUND`. An advice
+functions argument list must conform to the argument list of the function being
+advised. I.e. the advice function must capable of being applied to the same
+arguments as the function being advised. The exception is around advice, which
+must take as its first argument the next function to call.
+
+Before and after advice is stored as a list, which is iterated through with
+every function being applied to the argument list. Around advice is slightly
+different - while it is also stored as a list, the next function will only be
+called if the current function calls it. The next function may be the next
+around advice or the main function. When funcalling or applying the next
+function to the argslist, the next function in the advice list will
+automatically be passed in. 
+
+
+DEFINE-ADVISABLE
+----------------
+This macro takes a *NAME*, *ARGSLIST*, *RULE*, and function *BODY* and defines
+an advisable function. *RULE* dictates how *ARGSLIST* will be parsed into a list
+for applying advice to. Example:
+
+```
+(define-advisable adder (a b &rest c)
+    (cons a (cons b c))
+  "sum two or more numbers"
+  (+ a b (apply '+ c)))
+```
+
+MAKE-ADVISABLE
+--------------
+This macro will redefine a pre-existing function to be advisable. It will retain
+the original function definition. Calling `make-advisable` on an already
+advisable function will signal an error.
+
+```
+(defun adder (a b &rest c)
+  (+ a b (apply '+ c)))
+(make-advisable adder (a b &rest c) (cons a (cons b c)))
+```
 
 ADD-ADVICE
 ----------
-`add-advice` is used like so:
+This function adds advice to an advisable function. It will return the advisable
+function object, or if it doesn't exist, it will return nil. The arguments taken
+are: `(type fn-name advice-fn &key allow-duplicates (test 'eql))`.
+*TYPE* must be a keyword of `:before`, `:around`, or `:after`. *FN-NAME* is the
+quoted name of the function to add advice to. *ADVICE-FN* must either be a
+function object or a symbol denoting a function. *ALLOW-DUPLICATES* dictates
+whether or not a function can appear multiple times in an advice list. *TEST*
+must be a function suitable for `member`'s `:test` argument.
 
-`(add-advice (q-qualifier qualifier) name/db args body...)`
-
-It does the following:
-
-Define advice of type QUALIFIER for the function NAME. If an advisable-function
-object doesnt exist an error is signalled.
-
-Q-QUALIFIER denotes how to wrap pre-existing advice. It can be one of `:before`
-`:after` `:around` or `:base`. `:before` and `:after` will run their advice before
-and after pre-existing advice respectively. `:around` will expose the local macros
-called `CALL-NEXT-ADVICE` and `CALL-NEXT-ADVICE-WITH-ARGS` for usage in BODY. If a
-call to one of these macros does not occur in BODY then no further advice will be
-run. `:base` will overwrite pre-existing advice.
-
-QUALIFIER denotes what type of advice to create. It can have the value `:before` 
-`:after` or `:around`. These will run before, after or around the main function 
-respectively. `:around` advice will expose the local macros `CALL-MAIN-FUNCTION`
-and `CALL-MAIN-FUNCTION-WITH-ARGS`. If calls to these macros dont appear in BODY
-the main function will not be called. If both Q-QUALIFIER and QUALIFIER are
-`:around`, the local macros `CALL-NEXT-ADVICE`, `CALL-NEXT-ADVICE-WITH-ARGS`,
-`CALL-MAIN-FUNCTION`, and `CALL-MAIN-FUNCTION-WITH-ARGS` will be exposed to BODY.
-Advice should only ever call one of these macros to avoid running advice and the
-main function multiple times. 
-
-About `:around` advice - `:around` advice must be careful to return the correct
-value. The final value of `:around` advice is returned, so if one is doing
-something after a call to `CALL-MAIN-FUNCTION` or `CALL-NEXT-ADVICE`, one must
-properly capture the results of that call in order to return them. `:before` and
-`:after` advice does not have this problem.
-
-NAME/DB denotes the name and database for advice to be stored in. It can be a 
-symbol, in which case it denotes the name of the function to advise and the 
-database defaults to `*advice-hash-table*`, or it can be a list, in which case the 
-car denotes the name of the function to advise and the cadr denotes the database.
-
-ARGS must either conform to the arglist of the function denoted by NAME, be of the 
-form `(&rest rest)`, or be of the form `(&ignore)`. If &ignore is specified then
-any arguments will not be accessible to the advice. 
-
-BODY is the body of the advice. It may contain a docstring and declarations.
-
-How To
-------
-Advice can be defined with `defadvice`, like so:
 ```
-(defun test (a b) "add a and b" (+ a b))
-
-(defadvice :before test (&ignore)
-  "advice before test"
-  (format t "~&running before test~%"))
-
-(defadvice :around test (a b)
-  "increment a and b by 1 each before calling main function"
-  (format t "~&running around test with arguments ~a and ~a~%" a b)
-  (call-main-function-with-args (+ a 1) (+ b 1)))
-  
-(defadvice :after test (&ignore)
-  "advice after test"
-  (format t "~&running after test~%"))
+(add-advice :before 'adder 'adder-before-function)
 ```
 
-Advice can be activated and deactivated with `deactivate-advice` and
-`activate-advice`.
+ADVISE-FUNCTION
+---------------
+This macro defines functions for advising a function. It takes the arguments:
+`((fn-name &key allow-duplicates test (next-fn-arg 'next)) args &body advice)`. 
+*FN-NAME* is the name of the function to advise. *ALLOW-DUPLICATES* and *TEST*
+are as in `add-advice`. *NEXT-FN-ARG* is the argument name to be spliced in to
+the argument list of any around advice defined in the body. *ARGS* is the
+argument list for all advice functions defined in the body. *ADVICE* is a set
+of function definitions. These definitions must be of the form
+`(:type form1 form2 ... formn)` or `((:type name) form1 form2 ... formn)`.
+When an advice definition is of the first form, an anonymous function is added
+with `add-advice`. When the definition is of the second, a function named *NAME*
+is defined with `defun` before being added with `add-advice`. 
 
-Advice can be deleted with `delete-advice`.
+```
+(advise-function (adder) (a b &rest c)
+  ((:before adder-before-advice)
+   (format t "~&Calling ADDER with arguments ~A, ~A, and ~A~%" a b c)))
+```
 
-Documentation can be gotten with `advice-documentation`. 
+LIST-ADVICE
+-----------
+This function takes a symbol denoting a function to list the advice of, and the
+key arguments *TYPE* and *PRINT*, and returns a list of advice functions. *TYPE*
+should be one of `:before`, `:around`, or `:after`. If it is anything else, all
+advice lists are returned with `values`. When *PRINT* is true, the list of
+advice is printed to stdout.
+
+REMOVE-NTH-ADVICE
+-----------------
+This function takes an advice keyword, a symbol denoting a function, and a
+number, and removes the nth advice from the specified type of advice for the
+function. 
+
+REMOVE-ADVICE
+-------------
+This function takes a type, a symbol denoting a function, a piece of advice to
+remove, and the keyarg `:test`. *TYPE* must be an advice keyword, or `:all`.
+The specified peice of advice is removed from the specified advice list when it
+matches *TEST*. 
