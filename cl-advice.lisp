@@ -154,8 +154,7 @@
     obj))
 
 (defmacro advise-function ((fn-name &key allow-duplicates test (next-fn-arg 'next))
-                           args
-                           &body advice)
+                           args &body advice)
   `(progn
      ,@(loop for (type . body) in advice
              if (listp type)

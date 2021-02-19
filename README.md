@@ -8,6 +8,35 @@ function with `add-advice` and `advise-function`. Advice for a function may be
 listed with `list-advice`, and may be removed with `remove-advice` and
 `remove-nth-advice`.
 
+### EXAMPLE ###
+```
+(define-advisable adder (a b &rest c)
+    (cons a (cons b c))
+  (+ a b (apply '+ c)))
+
+=> adder
+
+(adder 1 2)
+
+=> 3
+
+(advise-function (adder :next-fn-arg fn)
+                 (a b &rest c)
+  ((:before adder-before)
+   (format t "Adding ~{~A~^, ~}~%" (cons a (cons b c))))
+  ((:around adder-around)
+   (format t "around advice, calling ~A~%" fn)
+   (apply fn (cons a (cons b c)))))
+
+=> (adder-around)
+
+(adder 1 2)
+
+Adding 1, 2
+around advice, calling #<FUNCTION (LAMBDA (&REST ARGS)...>
+=> 3
+```
+
 ### ADVICE TYPES ###
 There are three types of advice: `:BEFORE`, `:AFTER`, and `:AROUND`. An advice
 functions argument list must conform to the argument list of the function being
