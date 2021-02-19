@@ -13,7 +13,9 @@ function call.
 ```
 (define-advisable adder (a b &rest c)
     (cons a (cons b c))
-  (+ a b (apply '+ c)))
+  (let ((x (+ a b (apply '+ c))))
+    (format t "~&~A~%" x)
+    x))
 
 => adder
 
@@ -26,15 +28,19 @@ function call.
   ((:before adder-before)
    (format t "Adding ~{~A~^, ~}~%" (cons a (cons b c))))
   ((:around adder-around)
-   (format t "around advice, calling ~A~%" fn)
-   (apply fn (cons a (cons b c)))))
+   (format t "Calling main function ~A~%" fn)
+   (apply fn (cons a (cons b c))))
+  ((:after adder-after)
+   (format t "Added ~{~A~^, ~}~%" (cons a (cons b c)))))
 
 => (adder-around)
 
 (adder 1 2)
 
 Adding 1, 2
-around advice, calling #<FUNCTION (LAMBDA (&REST ARGS)...>
+Calling main function #<FUNCTION (LAMBDA (&REST ARGS)...>
+3
+Added 1, 2
 => 3
 ```
 
