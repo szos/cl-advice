@@ -6,7 +6,8 @@ function may be defined with `define-advisable`, while already defined functions
 may be made advisable with `make-advisable`. Advice may be added to an advisable
 function with `add-advice` and `advise-function`. Advice for a function may be
 listed with `list-advice`, and may be removed with `remove-advice` and
-`remove-nth-advice`.
+`remove-nth-advice`. Advisable functions introduce a hash table lookup for every
+function call.
 
 ### EXAMPLE ###
 ```
