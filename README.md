@@ -11,31 +11,31 @@ function call.
 
 ### EXAMPLE ###
 ```
-(define-advisable adder (a b &rest c)
-    (cons a (cons b c))
-  (let ((x (+ a b (apply '+ c))))
-    (format t "~&~A~%" x)
-    x))
+* (define-advisable adder (a b &rest c)
+      (cons a (cons b c))
+    (let ((x (+ a b (apply '+ c))))
+      (format t "~&~A~%" x)
+      x))
 
 => adder
 
-(adder 1 2)
+* (adder 1 2)
 
 => 3
 
-(advise-function (adder :next-fn-arg fn)
-                 (a b &rest c)
-  ((:before adder-before)
-   (format t "Adding ~{~A~^, ~}~%" (cons a (cons b c))))
-  ((:around adder-around)
-   (format t "Calling main function ~A~%" fn)
-   (apply fn (cons a (cons b c))))
-  ((:after adder-after)
-   (format t "Added ~{~A~^, ~}~%" (cons a (cons b c)))))
+* (advise-function (adder :next-fn-arg fn)
+                   (a b &rest c)
+    ((:before adder-before)
+     (format t "Adding ~{~A~^, ~}~%" (cons a (cons b c))))
+    ((:around adder-around)
+     (format t "Calling main function ~A~%" fn)
+     (apply fn (cons a (cons b c))))
+    ((:after adder-after)
+     (format t "Added ~{~A~^, ~}~%" (cons a (cons b c)))))
 
 => (adder-around)
 
-(adder 1 2)
+* (adder 1 2)
 
 Adding 1, 2
 Calling main function #<FUNCTION (LAMBDA (&REST ARGS)...>
