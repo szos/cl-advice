@@ -1,11 +1,11 @@
 ;;;; cl-advice.asd
 
 (asdf:defsystem #:cl-advice
-  :description "Describe cl-advice here"
-  :author "Your Name <your.name@example.com>"
-  :license  "Specify license here"
+  :description "Portable advice for Common Lisp"
+  :author "szos at posteo dot net"
+  :license  "LGPL"
   :version "0.0.1"
   :serial t
-  :depends-on (#:alexandria)
+  :depends-on (#:closer-mop)
   :components ((:file "package")
                (:file "cl-advice")))

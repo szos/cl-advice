@@ -1,0 +1,42 @@
+#+TITLE: CL-ADVICE
+
+A lightweight and portable system for advising functions in Common Lisp.
+
+* Description
+  ~CL-ADVICE~ implements a new function type which carries with it slots for before, around, and after advice. Functions can be defined as advisable, existing functions not within a locked package can be converted to advisable functions, and advisable functions can be converted to regular functions. 
+
+** Types of Advice
+   Pieces of advice are functions which get called before, after, or around the main function. Generally speaking, its a good idea to define advice functions as named functions and add it as a symbol and not a function object. This makes removing advice easier, and allows the advised function to use the new definition should the advice function be recompiled. Additionally, while installing anonymous functions as advice is allowed, removing anonymous function advice requires knowing where in the advice list it lies, or holding a reference to the anonymous function object. 
+*** Before and After Advice
+    Before and After advice must have an argument list that is compatible with the main function. Two argument lists are considered compatible if they can both be applied to the same arguments. These advice functions are looped through and called in order. 
+*** Around Advice
+    Around advice must take the next function to be called as its first argument, and all following arguments must be compatible with the main functions argument list. Around advice is unique in that it has control over whether or not the next function will be called. The next function may be the main function, or the next piece of around advice.
+    
+* Usage
+  This system is used primarily through the functions ~make-advisable~, ~defun-advisable~, ~add-advice~, ~replace-advice~, and ~remove-advice~. For more information, see the docstrings of the functions and macros exported in =package.lisp=. 
+
+** Example
+   An excerpt from an SBCL REPL. 
+   #+BEGIN_SRC lisp
+     > (defun-advisable myadder (a b &optional (c 0) &rest d)
+         (+ (+ a b c) (apply '+ d)))
+     #<ADVISABLE-FUNCTION {ADDRESS}>
+     > (defun myadder-before (a b &optional c &rest d)
+         (format t "Adding ~A, ~A, ~A, ~{~A~^, ~}" a b c d))
+     MYADDER-BEFORE
+     > (add-advice :before 'myadder 'myadder-before)
+     (MYADDER-BEFORE)
+     > (myadder 1 2)
+     Adding 1, 2, 0,
+     3
+     > (myadder 1 2 3)
+     Adding 1, 2, 3,
+     6
+     > (myadder 1 2 3 4)
+     Adding 1, 2, 3, 4
+     10
+     > (remove-advice :before 'testadder 'testadder-before)
+     NIL
+     > (testadder 1 2 3 4)
+     10
+   #+END_SRC
