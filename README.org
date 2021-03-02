@@ -37,6 +37,6 @@ A lightweight and portable system for advising functions in Common Lisp.
      10
      > (remove-advice :before 'testadder 'testadder-before)
      NIL
-     > (testadder 1 2 3 4)
+     > (myadder 1 2 3 4)
      10
    #+END_SRC
