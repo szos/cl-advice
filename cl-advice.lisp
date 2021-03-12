@@ -128,7 +128,9 @@ list and parses it into code to generate a list suitable for use with apply"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defclass advisable-function ()
-  ((main :initarg :main
+  ((arglist :initarg :arguments
+            :accessor advisable-function-arguments)
+   (main :initarg :main
          :accessor advisable-function-main)
    (before :initarg :before
            :accessor advisable-function-before
@@ -171,17 +173,18 @@ list and parses it into code to generate a list suitable for use with apply"
   (loop for fn in (advisable-function-after obj)
         do (apply fn args)))
 
-(defun make-advisable-function (function)
+(defun make-advisable-function (function &rest initargs)
   (unless (advisable-function-p function)
     (let ((fn (typecase function
                 (function function)
                 (symbol (symbol-function function))
                 (otherwise (error "~A is not a function" function)))))
-      (make-instance 'advisable-function :main fn))))
+      (apply 'make-instance 'advisable-function
+             (append (list :main fn) initargs)))))
 
 (defmacro make-install-advisable-function-dispatcher (argslist mainfn)
   (with-gensyms (fobj fixed)
-    `(let ((,fobj (make-advisable-function ,mainfn)))
+    `(let ((,fobj (make-advisable-function ,mainfn :arguments ',argslist)))
        (c2mop:set-funcallable-instance-function
         ,fobj (lambda ,argslist
                 ,@(generate-ignore-declarations argslist)
@@ -214,6 +217,12 @@ list. if argslist is nil, a single &rest argument will be used."
               (advisable-function-main fn))
         (error "~A is not an advisable function" symbol))))
 
+(defun copy-advice (fn1 fn2)
+  "DESTRUCTIVELY Copy all advice from FN1 to FN2"
+  (setf (advisable-function-before fn2) (advisable-function-before fn1)
+        (advisable-function-around fn2) (advisable-function-around fn1)
+        (advisable-function-after  fn2) (advisable-function-after  fn1)))
+
 (defmacro advisable-lambda (argslist &body body)
   "Return an advisable function object"
   `(make-install-advisable-function-dispatcher
@@ -221,8 +230,17 @@ list. if argslist is nil, a single &rest argument will be used."
 
 (defmacro defun-advisable (name argslist &body body)
   "Define a function as an advisable function - works the same as DEFUN."
-  `(setf (symbol-function ',name)
-         (advisable-lambda ,argslist ,@body)))
+  (with-gensyms (oldfn)
+    `(let ((,oldfn (handler-case (symbol-function ',name)
+                     (undefined-function () nil))))
+       (if ,oldfn
+           (progn
+             (setf (symbol-function ',name)
+                   (advisable-lambda ,argslist ,@body))
+             (when (equal (advisable-function-arguments ,oldfn) ',argslist)
+               (copy-advice ,oldfn (symbol-function ',name))))
+           (progn (defun ,name ,argslist ,@body)
+                  (make-advisable ',name ,argslist))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Adding and Removing Advice ;;;

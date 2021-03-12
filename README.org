@@ -13,30 +13,78 @@ A lightweight and portable system for advising functions in Common Lisp.
     Around advice must take the next function to be called as its first argument, and all following arguments must be compatible with the main functions argument list. Around advice is unique in that it has control over whether or not the next function will be called. The next function may be the main function, or the next piece of around advice.
     
 * Usage
-  This system is used primarily through the functions ~make-advisable~, ~defun-advisable~, ~add-advice~, ~replace-advice~, and ~remove-advice~. For more information, see the docstrings of the functions and macros exported in =package.lisp=. 
+  This system is used primarily through the functions ~make-advisable~, ~defun-advisable~, ~add-advice~, ~replace-advice~, and ~remove-advice~. For more information, see the docstrings of the functions and macros exported in =package.lisp=.
 
-** Example
-   An excerpt from an SBCL REPL. 
-   #+BEGIN_SRC lisp
-     > (defun-advisable myadder (a b &optional (c 0) &rest d)
-         (+ (+ a b c) (apply '+ d)))
-     #<ADVISABLE-FUNCTION {ADDRESS}>
-     > (defun myadder-before (a b &optional c &rest d)
-         (format t "Adding ~A, ~A, ~A, ~{~A~^, ~}" a b c d))
-     MYADDER-BEFORE
-     > (add-advice :before 'myadder 'myadder-before)
-     (MYADDER-BEFORE)
-     > (myadder 1 2)
-     Adding 1, 2, 0,
-     3
-     > (myadder 1 2 3)
-     Adding 1, 2, 3,
-     6
-     > (myadder 1 2 3 4)
-     Adding 1, 2, 3, 4
-     10
-     > (remove-advice :before 'testadder 'testadder-before)
-     NIL
-     > (myadder 1 2 3 4)
-     10
-   #+END_SRC
+** Redefining functions
+   The macro ~defun-advisable~ copies existing advice if and only if the function has the same argument list (as compared by ~equal~). 
+
+** Example: ~TRACE~
+   We can implement ~trace~ in terms of ~:around~ advice like so:
+#+BEGIN_SRC lisp
+  (defpackage :tracer
+    (:use :cl :cl-advice))
+
+  (defun make-simple-tracer (&optional (sym 'unknown-function))
+    (let ((inc 0))
+      (lambda (next-fn &rest args)
+        (format t "~&~A~A: Calling ~A with arguments ~A~%"
+                (apply 'concatenate 'string
+                       (loop for x from 0 to inc
+                             collect " "))
+                inc sym args)
+        (incf inc)
+        (let ((result (apply next-fn args)))
+          (decf inc)
+          (format t "~&~A~A: ~A returned ~A~%" (apply 'concatenate 'string
+                                                      (loop for x from 0 to inc
+                                                            collect " "))
+                  inc sym result)
+          result))))
+
+  (defun-advisable fib (n)
+    (if (< n 2)
+        n
+        (+ (fib (- n 1)) (fib (- n 2)))))
+
+  (add-advice :around 'fib (make-simple-tracer 'fib))
+#+END_SRC
+
+   The result of this is that when ~fib~ is called, the following will be printed to standard output:
+#+BEGIN_SRC lisp
+  TRACER> (fib 1)
+   0: Calling FIB with arguments (1)
+   0: FIB returned 1
+  1
+  TRACER> (fib 5)
+   0: Calling FIB with arguments (5)
+    1: Calling FIB with arguments (4)
+     2: Calling FIB with arguments (3)
+      3: Calling FIB with arguments (2)
+       4: Calling FIB with arguments (1)
+       4: FIB returned 1
+       4: Calling FIB with arguments (0)
+       4: FIB returned 0
+      3: FIB returned 1
+      3: Calling FIB with arguments (1)
+      3: FIB returned 1
+     2: FIB returned 2
+     2: Calling FIB with arguments (2)
+      3: Calling FIB with arguments (1)
+      3: FIB returned 1
+      3: Calling FIB with arguments (0)
+      3: FIB returned 0
+     2: FIB returned 1
+    1: FIB returned 3
+    1: Calling FIB with arguments (3)
+     2: Calling FIB with arguments (2)
+      3: Calling FIB with arguments (1)
+      3: FIB returned 1
+      3: Calling FIB with arguments (0)
+      3: FIB returned 0
+     2: FIB returned 1
+     2: Calling FIB with arguments (1)
+     2: FIB returned 1
+    1: FIB returned 2
+   0: FIB returned 5
+  5 (3 bits, #x5, #o5, #b101)
+#+END_SRC
