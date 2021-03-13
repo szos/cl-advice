@@ -425,52 +425,25 @@ standard output."
           (advisable-function-around obj) nil
           (advisable-function-after obj) nil)))
 
-(defun remove-advice-before (fn advice &optional (test 'eql))
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-before obj)
-          (unless (eq advice :all)
-            (remove advice (advisable-function-before obj) :test test)))))
-
-(defun remove-advice-around (fn advice &optional (test 'eql))
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-around obj)
-          (unless (eq advice :all)
-            (remove advice (advisable-function-around obj) :test test)))))
-
-(defun remove-advice-after (fn advice &optional (test 'eql))
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-after obj)
-          (unless (eq advice :all)
-            (remove advice (advisable-function-after obj) :test test)))))
-
-(defun remove-advice (type fn advice &key (test 'eql))
-  "Remove the advice function ADVICE FROM function FNs TYPE advice list. "
-  (case type
-    (:before (remove-advice-before fn advice test))
-    (:around (remove-advice-around fn advice test))
-    (:after  (remove-advice-after  fn advice test))
-    (:all (remove-advice-all fn))))
-
 (defun remove-nth (list nth)
   (loop for el in list
         for x from 0
         unless (= x nth)
           collect el))
 
-(defun remove-nth-advice-before (fn nth)
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-before obj)
-          (remove-nth (advisable-function-before obj) nth))))
-
-(defun remove-nth-advice-around (fn nth)
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-around obj)
-          (remove-nth (advisable-function-around obj) nth))))
-
-(defun remove-nth-advice-after (fn nth)
-  (when-let1 (obj (ensure-advisable-function fn))
-    (setf (advisable-function-after obj)
-          (remove-nth (advisable-function-after obj) nth))))
+(macrolet ((generate-remove-nth (type)
+             (let ((accessor (case type
+                               (:before 'advisable-function-before)
+                               (:around 'advisable-function-around)
+                               (:after  'advisable-function-after))))
+               `(defun ,(intern (concatenate 'string "REMOVE-NTH-ADVICE-"
+                                             (symbol-name type)))
+                    (fn nth)
+                  (when-let1 (obj (ensure-advisable-function fn))
+                    (setf (,accessor obj) (remove-nth (,accessor obj) nth)))))))
+  (generate-remove-nth :before)
+  (generate-remove-nth :around)
+  (generate-remove-nth :after))
 
 (defun remove-nth-advice (type fn nth)
   "Remove NTH advice advice from FNs advice list of type TYPE."
@@ -478,3 +451,59 @@ standard output."
     (:before (remove-nth-advice-before fn nth))
     (:around (remove-nth-advice-around fn nth))
     (:after  (remove-nth-advice-after  fn nth))))
+
+(macrolet ((generate-remove-advice (type checker)
+             ;; generate remove-*-advice-if/-not functions 
+             (let ((accessor (case type
+                               (:before '(advisable-function-before fn))
+                               (:around '(advisable-function-around fn))
+                               (:after  '(advisable-function-after fn)))))
+               `(defun ,(intern (concatenate 'string "REMOVE-" (symbol-name type)
+                                             (case checker
+                                               (when "-ADVICE-IF-NOT")
+                                               (unless "-ADVICE-IF"))))
+                    (predicate function from-end start end)
+                  (declare (type number start)
+                           (type (or number null) end)
+                           (type function predicate))
+                  (when-let1 (fn (ensure-advisable-function function))
+                    (do ((counter start (+ counter 1))
+                         (accumulator nil)
+                         (list (nthcdr start (if from-end
+                                                 (reverse ,accessor)
+                                                 ,accessor))
+                               (cdr list)))
+                        ((or (not list) (and end (= counter end)))
+                         (setf ,accessor (reverse accumulator)))
+                      (,checker (funcall predicate (car list))
+                                (push (car list) accumulator)))))))
+           (gen-wrap (suffix)
+             ;; generate remove-advice-if/-not functions
+             (flet ((generate-remove-call (where)
+                      (intern (concatenate 'string "REMOVE-" (symbol-name where)
+                                           "-ADVICE-" (symbol-name suffix)))))
+               `(defun ,(intern (concatenate 'string "REMOVE-ADVICE-"
+                                             (symbol-name suffix)))
+                    (predicate type function &key from-end (start 0) end)
+                  (case type
+                    (:before (,(generate-remove-call 'before)
+                              predicate function from-end start end))
+                    (:around (,(generate-remove-call 'around)
+                              predicate function from-end start end))
+                    (:after (,(generate-remove-call 'after)
+                             predicate function from-end start end)))))))
+  (generate-remove-advice :before when)
+  (generate-remove-advice :around when)
+  (generate-remove-advice :after  when)
+  (generate-remove-advice :before unless)
+  (generate-remove-advice :around unless)
+  (generate-remove-advice :after  unless)
+  (gen-wrap if)
+  (gen-wrap if-not))
+
+(defun remove-advice (type fn advice &key (test 'eql))
+  (remove-advice-if (lambda (f)
+                      (if (eql advice :all)
+                          t
+                          (funcall test f advice)))
+                    type fn))
