@@ -8,4 +8,5 @@
   :serial t
   :depends-on (#:closer-mop)
   :components ((:file "package")
-               (:file "cl-advice")))
+               (:file "cl-advice"))
+  :in-order-to ((asdf:test-op (asdf:test-op :cl-advice-tests))))
