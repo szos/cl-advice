@@ -4,6 +4,7 @@
   (:use #:cl)
   (:export #:advisable-function-p
            #:make-advisable
+	   #:make-unadvisable
            #:advisable-lambda
            #:defun-advisable
 
