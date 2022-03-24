@@ -3,20 +3,41 @@
 A lightweight and portable system for advising functions in Common Lisp.
 
 * Description
-  ~CL-ADVICE~ implements a new function type which carries with it slots for before, around, and after advice. Functions can be defined as advisable, existing functions not within a locked package can be converted to advisable functions, and advisable functions can be converted to regular functions. 
+  ~CL-ADVICE~ implements a new function type which carries with it slots for
+  before, around, and after advice. Functions can be defined as advisable,
+  existing functions not within a locked package can be converted to advisable
+  functions, and advisable functions can be converted to regular functions.
 
 ** Types of Advice
-   Pieces of advice are functions which get called before, after, or around the main function. Generally speaking, its a good idea to define advice functions as named functions and add it as a symbol and not a function object. This makes removing advice easier, and allows the advised function to use the new definition should the advice function be recompiled. Additionally, while installing anonymous functions as advice is allowed, removing anonymous function advice requires knowing where in the advice list it lies, or holding a reference to the anonymous function object. 
+   Pieces of advice are functions which get called before, after, or around the
+   main function. Generally speaking, its a good idea to define advice functions
+   as named functions and add it as a symbol and not a function object. This
+   makes removing advice easier, and allows the advised function to use the new
+   definition should the advice function be recompiled. Additionally, while
+   installing anonymous functions as advice is allowed, removing anonymous
+   function advice requires knowing where in the advice list it lies, or holding
+   a reference to the anonymous function object.
 *** Before and After Advice
-    Before and After advice must have an argument list that is compatible with the main function. Two argument lists are considered compatible if they can both be applied to the same arguments. These advice functions are looped through and called in order. 
+    Before and After advice must have an argument list that is compatible with
+    the main function. Two argument lists are considered compatible if they can
+    both be applied to the same arguments. These advice functions are looped
+    through and called in order.
 *** Around Advice
-    Around advice must take the next function to be called as its first argument, and all following arguments must be compatible with the main functions argument list. Around advice is unique in that it has control over whether or not the next function will be called. The next function may be the main function, or the next piece of around advice.
+    Around advice must take the next function to be called as its first
+    argument, and all following arguments must be compatible with the main
+    functions argument list. Around advice is unique in that it has control over
+    whether or not the next function will be called. The next function may be
+    the main function, or the next piece of around advice.
     
 * Usage
-  This system is used primarily through the functions ~make-advisable~, ~defun-advisable~, ~add-advice~, ~replace-advice~, and ~remove-advice~. For more information, see the docstrings of the functions and macros exported in =package.lisp=.
+  This system is used primarily through the functions ~make-advisable~,
+  ~defun-advisable~, ~add-advice~, ~replace-advice~, and ~remove-advice~. For
+  more information, see the docstrings of the functions and macros exported in
+  =package.lisp=.
 
 ** Redefining functions
-   The macro ~defun-advisable~ copies existing advice if and only if the function has the same argument list (as compared by ~equal~). 
+   The macro ~defun-advisable~ copies existing advice if and only if the
+   function has the same argument list (as compared by ~equal~).
 
 ** Example: ~TRACE~
    We can implement ~trace~ in terms of ~:around~ advice like so:
@@ -24,22 +45,20 @@ A lightweight and portable system for advising functions in Common Lisp.
   (defpackage :tracer
     (:use :cl :cl-advice))
 
+  (in-package :tracer)
+
   (defun make-simple-tracer (&optional (sym 'unknown-function))
     (let ((inc 0))
       (lambda (next-fn &rest args)
-        (format t "~&~A~A: Calling ~A with arguments ~A~%"
-                (apply 'concatenate 'string
-                       (loop for x from 0 to inc
-                             collect " "))
-                inc sym args)
-        (incf inc)
-        (let ((result (apply next-fn args)))
-          (decf inc)
-          (format t "~&~A~A: ~A returned ~A~%" (apply 'concatenate 'string
-                                                      (loop for x from 0 to inc
-                                                            collect " "))
-                  inc sym result)
-          result))))
+        (let ((string (make-string inc :initial-element #\space)))
+          (format t "~&~A~A: Calling ~A with arguments ~A~%"
+                  string inc sym args)
+          (incf inc)
+          (let ((result (apply next-fn args)))
+            (decf inc)
+            (format t "~&~A~A: ~A returned ~A~%"
+                    string inc sym result)
+            result)))))
 
   (defun-advisable fib (n)
     (if (< n 2)
@@ -49,7 +68,8 @@ A lightweight and portable system for advising functions in Common Lisp.
   (add-advice :around 'fib (make-simple-tracer 'fib))
 #+END_SRC
 
-   The result of this is that when ~fib~ is called, the following will be printed to standard output:
+   The result of this is that when ~fib~ is called, the following will be
+   printed to standard output:
 #+BEGIN_SRC lisp
   TRACER> (fib 1)
    0: Calling FIB with arguments (1)
