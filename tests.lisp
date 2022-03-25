@@ -7,6 +7,9 @@
   (with-output-to-string (*standard-output*)
     (funcall fun)))
 
+(defun-advisable advisable-main ()
+  (format t "main."))
+
 (defun main ()
   (format t "main."))
 
@@ -21,10 +24,15 @@
   (funcall next)
   (format t "end."))
 
+(defun before1 ()
+  (format t "before1."))
+
 (defun run-tests ()
   (fiveam:run! 'advice-tests))
 
 (def-test advice-tests ()
+  (is (string= (foutput 'advisable-main) "main.") "Advisable function")
+  (is (cl-advice:advisable-function-p (symbol-function 'advisable-main)) "Is advisable")
   
   (is (string= (foutput 'main) "main.") "Without advice")
   (is (not (cl-advice:advisable-function-p (symbol-function 'main))) "Not advisable")
@@ -40,12 +48,19 @@
   
   (is (string= (foutput 'main) "before.main.") "Before advice")
 
+  (cl-advice:add-advice :before 'main 'before1)
+  (is (string= (foutput 'main) "before1.before.main.") "Add before advice again")
+
+  (cl-advice:replace-advice :before 'main 'before1 'before)
+  (is (string= (foutput 'main) "before.before.main.") "Replace before advice")
+  
   (cl-advice:remove-advice :before 'main 'before)
+  (cl-advice:remove-advice :before 'main 'before1)
 
   (is (string= (foutput 'main) "main.") "After remove :before advice")
 
-  (cl-advice:add-advice :after 'main 'after)
-  (is (string= (foutput 'main) "main.after.") "Before advice")
+    (cl-advice:add-advice :after 'main 'after)
+  (is (string= (foutput 'main) "main.after.") "After advice")
 
   (cl-advice:remove-advice :after 'main 'after)
   (is (string= (foutput 'main) "main.") "After remove :after advice")
@@ -67,4 +82,3 @@
 
   (is (string= (foutput 'main) "main.") "After make-unadvisable")
   (is (not (cl-advice:advisable-function-p (symbol-function 'main))))
-  )
