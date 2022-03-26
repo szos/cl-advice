@@ -4,7 +4,8 @@
                 #:add-advice
                 #:remove-advice
                 #:replace-advice
-		#:remove-advice-all)
+		#:remove-advice-all
+		#:make-unadvisable)
   (:export :run-tests))
 
 (in-package :cl-advice-tests)
@@ -74,7 +75,18 @@
 
   (remove-advice-all 'main)
 
-  (is (string= (foutput 'main) "main.") "After make-unadvisable")
+  (is (string= (foutput 'main) "main.") "After remove-advice-all")
+
+  ;; all advices
+  (add-advice :before 'main 'before)
+  (add-advice :after 'main 'after)
+  (add-advice :around 'main 'around)
+
+  (is (string= (foutput 'main) "before.begin.main.end.after.") "All advices again")
+
+  (make-unadvisable 'main)
+
+  (is (string= (foutput 'main) "main.") "After remove-advice-all")
   )
 
 (defun main-args (x y)
@@ -134,7 +146,19 @@
 
   (remove-advice-all 'main-args)
 
-  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After make-unadvisable"))
+  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After remove-advice-all")
+
+  ;; all advices
+  (add-advice :before 'main-args 'before-args)
+  (add-advice :after 'main-args 'after-args)
+  (add-advice :around 'main-args 'around-args)
+
+  (is (string= (foutput 'main-args 'x 'y) "before(X Y).begin(X Y).main(X Y).end.after(X Y).") "All advices again")
+
+  (make-unadvisable 'main-args)
+
+  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After make-unadvisable")
+  )
 
 (defun values-main (a b)
   (values a b))

@@ -9,4 +9,5 @@
            #:list-advice
            #:remove-advice
            #:remove-nth-advice
-	   #:remove-advice-all))
+	   #:remove-advice-all
+	   #:make-unadvisable))
