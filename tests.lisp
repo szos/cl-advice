@@ -1,13 +1,10 @@
 (defpackage :cl-advice-tests
   (:use :cl :fiveam)
   (:import-from :cl-advice
-                #:defun-advisable
-                #:advisable-function-p
-                #:make-advisable
-                #:make-unadvisable
                 #:add-advice
                 #:remove-advice
-                #:replace-advice)
+                #:replace-advice
+		#:remove-advice-all)
   (:export :run-tests))
 
 (in-package :cl-advice-tests)
@@ -20,9 +17,6 @@
 (defun foutput (fun &rest args)
   (with-output-to-string (*standard-output*)
     (apply fun args)))
-
-(defun-advisable advisable-main ()
-  (format t "main."))
 
 (defun main ()
   (format t "main."))
@@ -42,18 +36,7 @@
   (format t "before1."))
 
 (def-test advice-tests ()
-  (is (string= (foutput 'advisable-main) "main.") "Advisable function")
-  (is (advisable-function-p (symbol-function 'advisable-main)) "Is advisable")
-
   (is (string= (foutput 'main) "main.") "Without advice")
-  (is (not (advisable-function-p (symbol-function 'main))) "Not advisable")
-
-  (signals error (add-advice :before 'main 'before) "Add advice to non advisable fails")
-
-  (make-advisable 'main)
-  (is (advisable-function-p (symbol-function 'main)) "Is advisable")
-
-  (is (string= (foutput 'main) "main.") "Eval after advisable")
 
   (add-advice :before 'main 'before)
 
@@ -89,10 +72,9 @@
 
   (is (string= (foutput 'main) "before.begin.main.end.after.") "All advices")
 
-  (make-unadvisable 'main)
+  (remove-advice-all 'main)
 
   (is (string= (foutput 'main) "main.") "After make-unadvisable")
-  (is (not (advisable-function-p (symbol-function 'main))))
   )
 
 (defun main-args (x y)
@@ -115,14 +97,6 @@
 
 (def-test advice-args-tests ()
   (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "Without advice")
-  (is (not (advisable-function-p (symbol-function 'main-args))) "Not advisable")
-
-  (signals error (add-advice :before 'main-args 'before-args) "Add advice to non advisable fails")
-
-  (make-advisable 'main-args)
-  (is (advisable-function-p (symbol-function 'main-args)) "Is advisable")
-
-  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "Eval after advisable")
 
   (add-advice :before 'main-args 'before-args)
 
@@ -158,10 +132,9 @@
 
   (is (string= (foutput 'main-args 'x 'y) "before(X Y).begin(X Y).main(X Y).end.after(X Y).") "All advices")
 
-  (make-unadvisable 'main-args)
+  (remove-advice-all 'main-args)
 
-  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After make-unadvisable")
-  (is (not (advisable-function-p (symbol-function 'main-args)))))
+  (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After make-unadvisable"))
 
 (defun values-main (a b)
   (values a b))
@@ -180,10 +153,6 @@
   (is (equal (multiple-value-list (values-main 'a 'b)) (list 'a 'b))
       "Check unadvised return value")
 
-  (make-advisable 'values-main (a b))
-
-  (is (advisable-function-p #'values-main) "Is advisable")
-  
   (add-advice :around 'values-main 'values-around)
    
   (is (equal (values-main 'a 'b) (list 'a 'b))

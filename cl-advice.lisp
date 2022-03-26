@@ -229,31 +229,17 @@ list. if argslist is nil, a single &rest argument will be used."
   `(make-install-advisable-function-dispatcher
     ,argslist (lambda ,argslist ,@body)))
 
-(defmacro defun-advisable (name argslist &body body)
-  "Define a function as an advisable function - works the same as DEFUN."
-  (with-gensyms (oldfn)
-    `(let ((,oldfn (handler-case (symbol-function ',name)
-                     (undefined-function () nil))))
-       (if ,oldfn
-           (progn
-             (setf (symbol-function ',name)
-                   (advisable-lambda ,argslist ,@body))
-             (when (equal (advisable-function-arguments ,oldfn) ',argslist)
-               (copy-advice ,oldfn (symbol-function ',name))))
-           (progn (defun ,name ,argslist ,@body)
-                  (make-advisable ',name ,argslist))))))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Adding and Removing Advice ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun ensure-advisable-function (fn)
-  (let ((f (typecase fn
-             (symbol (symbol-function fn))
-             (advisable-function fn))))
-    (if (advisable-function-p f)
-        f
-        (error "~A is not an advisable function" fn))))
+(defun ensure-advisable-function (fname)
+  (check-type fname symbol)
+  
+  (when (not (advisable-function-p (symbol-function fname)))
+    (make-advisable fname))
+  
+  (symbol-function fname))
 
 (defun add-advice-around (function advice-fn &key allow-duplicates (test 'eql) from-end)
   (let* ((advise (ensure-advisable-function function))
