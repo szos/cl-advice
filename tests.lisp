@@ -163,4 +163,6 @@
 
   
   (is (string= (foutput 'values-main 'a 'b) "Before(A B)After(A B)")
-      "Eval after adding before/after advice"))
+      "Eval after adding before/after advice")
+
+  (remove-advice-all 'values-main))
