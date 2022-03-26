@@ -161,5 +161,37 @@
   (make-unadvisable 'main-args)
 
   (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "After make-unadvisable")
-  (is (not (advisable-function-p (symbol-function 'main-args))))
-  )
+  (is (not (advisable-function-p (symbol-function 'main-args)))))
+
+(defun values-main (a b)
+  (values a b))
+
+(defun values-before (a b)
+  (format t "Before(~A ~A)" a b))
+
+(defun values-after (a b)
+  (format t "After(~A ~A)" a b))
+
+(defun values-around (next a b)
+  (multiple-value-list (funcall next a b)))
+
+(def-test advice-multiple-values ()
+  (is (string= (foutput 'values-main 'a 'b) "") "Without advice")
+  (is (equal (multiple-value-list (values-main 'a 'b)) (list 'a 'b))
+      "Check unadvised return value")
+
+  (make-advisable 'values-main (a b))
+
+  (is (advisable-function-p #'values-main) "Is advisable")
+  
+  (add-advice :around 'values-main 'values-around)
+   
+  (is (equal (values-main 'a 'b) (list 'a 'b))
+      "Around advice modifies return value")
+
+  (add-advice :before 'values-main 'values-before)
+  (add-advice :after 'values-main 'values-after)
+
+  
+  (is (string= (foutput 'values-main 'a 'b) "Before(A B)After(A B)")
+      "Eval after adding before/after advice"))
