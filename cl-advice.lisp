@@ -190,9 +190,12 @@ list and parses it into code to generate a list suitable for use with apply"
         ,fobj (lambda ,argslist
                 ,@(generate-ignore-declarations argslist)
                 (let ((,fixed ,(argument-list-to-apply-list argslist)))
-                  (prog2 (apply-before ,fobj ,fixed)
-                      (apply-around ,fobj ,fixed)
-                    (apply-after ,fobj ,fixed)))))
+                  (apply-before ,fobj ,fixed)
+                  (multiple-value-call
+                      #'(lambda (&rest rest)
+                          (apply-after ,fobj ,fixed)
+                          (apply #'values rest))
+                    (apply-around ,fobj ,fixed)))))
        ,fobj)))
 
 (defmacro convert-to-advisable (symbol &optional arglist)
