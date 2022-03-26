@@ -86,7 +86,7 @@
 
   (make-unadvisable 'main)
 
-  (is (string= (foutput 'main) "main.") "After remove-advice-all")
+  (is (string= (foutput 'main) "main.") "After make-unadvisable")
   )
 
 (defun main-args (x y)
