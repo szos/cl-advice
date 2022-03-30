@@ -10,6 +10,8 @@
            #:ensure-advisable-function
            #:with-implicit-conversion
 
+           #:*allow-implicit-conversion*
+
            #:define-advisory-functions
            #:add-advice
            #:replace-advice
