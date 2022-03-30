@@ -7,10 +7,14 @@
 	   #:make-unadvisable
            #:advisable-lambda
            #:defun-advisable
+           #:ensure-advisable-function
+           #:with-implicit-conversion
 
            #:define-advisory-functions
            #:add-advice
            #:replace-advice
            #:list-advice
            #:remove-advice
-           #:remove-nth-advice))
+           #:remove-nth-advice
+
+           #:implicit-conversion-to-advisable-function))

@@ -21,12 +21,6 @@
 ;;; Utility ;;;
 ;;;;;;;;;;;;;;;
 
-(defun flatten (l)
-  (when l
-    (if (atom l)
-        (list l)
-        (mapcan 'flatten l))))
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun argument-list-to-apply-list (argslist)
     "This function is for use a macroexpansion time. It takes an ordinary lambda 
@@ -120,9 +114,10 @@ list and parses it into code to generate a list suitable for use with apply"
                (let ((rest (member '&rest arglist)))
                  (when rest
                    (collect-after-rest (cddr rest))))))
-      (let ((ignoring (parse argument-list)))
-        (when ignoring
-          `((declare (ignore ,@ignoring))))))))
+      (unless (eql argument-list :not-provided)
+        (let ((ignoring (parse argument-list)))
+          (when ignoring
+            `((declare (ignore ,@ignoring)))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; The Advisable Function Class ;;;
@@ -131,18 +126,105 @@ list and parses it into code to generate a list suitable for use with apply"
 (defclass advisable-function ()
   ((arglist :initarg :arguments
             :accessor advisable-function-arguments)
-   (main :initarg :main
-         :accessor advisable-function-main)
-   (before :initarg :before
-           :accessor advisable-function-before
-           :initform nil)
-   (around :initarg :around
-           :accessor advisable-function-around
-           :initform nil)
-   (after :initarg :after
-          :accessor advisable-function-after
-          :initform nil))
+   (main    :accessor advisable-function-main)
+   (before  :initarg :before
+            :accessor advisable-function-before
+            :initform nil)
+   (around  :initarg :around
+            :accessor advisable-function-around
+            :initform nil)
+   (after   :initarg :after
+            :accessor advisable-function-after
+            :initform nil))
   (:metaclass c2mop:funcallable-standard-class))
+
+(define-condition advisable-function-initialization-error (error)
+  ((advisable-function :initarg :advisable-function
+                       :reader
+                       advisable-function-initialization-error-advisable-function)
+   (main-function :initarg :function
+                  :reader advisable-function-initialization-error-function))
+  (:report
+   (lambda (c s)
+     (format s
+             "Expected a normal function when initializing object ~A, but got ~A"
+             (advisable-function-initialization-error-advisable-function c)
+             (advisable-function-initialization-error-function c)))))
+
+;; Define a documentation method for advisable function objects which returns
+;; the documentation of all functions except the dispatcher
+(macrolet
+    ((document-advisable-function (obj)
+       `(flet ((document-function (fn)
+                 (documentation fn 'function)))
+          (append
+           (list :before)
+           (when (advisable-function-before ,obj)
+             (remove nil (mapcar #'document-function
+                                 (advisable-function-before ,obj))))
+           (list :around)
+           (when (advisable-function-around ,obj)
+             (remove nil (mapcar #'document-function
+                                 (advisable-function-around ,obj))))
+           (list :main (document-function (advisable-function-main ,obj)))
+           (list :after)
+           (when (advisable-function-after ,obj)
+             (remove nil (mapcar #'document-function
+                                 (advisable-function-after ,obj))))))))
+  (defmethod cl:documentation ((obj advisable-function) (doctype (eql t)))
+    (document-advisable-function obj))
+  (defmethod cl:documentation ((obj advisable-function) (doctype (eql 'function)))
+    (document-advisable-function obj)))
+
+(defmethod initialize-instance :around
+    ((obj advisable-function) &key main &allow-other-keys)
+  "Normalize the function being advised to be a function object"
+  (let ((normalized-main (typecase main
+                           (symbol (symbol-function main))
+                           (otherwise main))))
+    (if (and (functionp normalized-main)
+             (not (typep normalized-main 'advisable-function)))
+        (progn
+          (setf (slot-value obj 'main) normalized-main)
+          (call-next-method))
+        (error 'advisable-function-initialization-error
+               :function main
+               :advisable-function obj))))
+
+(defmethod initialize-instance :after
+    ((obj advisable-function)
+     &key dispatcher-generator force-accurate-dispatcher-arglist &allow-other-keys)
+  "Set the funcallable instance function. 
+
+If DISPATCHER-GENERATOR is provided it must be a function of arity one which
+will be passed the advisable function object and must return a dispatcher
+function. 
+
+Otherwise if FORCE-ACCURATE-DISPATCHER-ARGLIST is T and arguments were provided,
+then EVAL is used to generate a dispatcher function with the correct argument
+list.
+
+Otherwise a generic dispatcher is used which takes a rest argument."
+  (c2mop:set-funcallable-instance-function
+   obj
+   (cond (dispatcher-generator
+          (funcall dispatcher-generator obj))
+         ((and force-accurate-dispatcher-arglist
+               (not (eql (advisable-function-arguments obj) :not-provided)))
+          (eval `(lambda ,(advisable-function-arguments obj)
+                   "Advisable function dispatcher"
+                   ,@(generate-ignore-declarations
+                      (advisable-function-arguments obj))
+                   (let ((fixed ,(argument-list-to-apply-list
+                                  (advisable-function-arguments obj))))
+                     (apply-before ,obj fixed)
+                     (multiple-value-prog1 (apply-around ,obj fixed)
+                       (apply-after ,obj fixed))))))
+         (t (lambda (&rest arguments)
+              "Advisable function dispatcher"
+              (apply-before obj arguments)
+              (multiple-value-prog1 (apply-around obj arguments)
+                (apply-after obj arguments)))))))
 
 (defun advisable-function-p (object)
   "Check if OBJECT is an advisable function"
@@ -174,49 +256,66 @@ list and parses it into code to generate a list suitable for use with apply"
   (loop for fn in (advisable-function-after obj)
         do (apply fn args)))
 
-(defun make-advisable-function (function &rest initargs)
-  (unless (advisable-function-p function)
-    (let ((fn (typecase function
-                (function function)
-                (symbol (symbol-function function))
-                (otherwise (error "~A is not a function" function)))))
-      (apply 'make-instance 'advisable-function
-             (append (list :main fn) initargs)))))
+(defun make-advisable (symbol &key (arguments :not-provided args-provided-p)
+                                force-use-arguments)
+  "Make the function denoted by SYMBOL an advisable function"
+  (check-type symbol (or symbol function))
+  (let ((fn (make-instance 'advisable-function
+                           :main symbol
+                           :arguments arguments
+                           :force-accurate-dispatcher-arglist
+                           (and args-provided-p force-use-arguments))))
+    (if (and (typep symbol 'symbol) fn)
+        (restart-case (setf (symbol-function symbol) fn)
+          (abort ()
+            :report (lambda (s)
+                      (format s "Abort conversion of ~A to be advisable"
+                              symbol))
+            fn))
+        fn)))
 
-(defmacro make-install-advisable-function-dispatcher (argslist mainfn)
-  (with-gensyms (fobj fixed)
-    `(let ((,fobj (make-advisable-function ,mainfn :arguments ',argslist)))
-       (c2mop:set-funcallable-instance-function
-        ,fobj (lambda ,argslist
-                ,@(generate-ignore-declarations argslist)
-                (let ((,fixed ,(argument-list-to-apply-list argslist)))
-                  (apply-before ,fobj ,fixed)
-                  (multiple-value-prog1 (apply-around ,fobj ,fixed)
-                    (apply-after ,fobj ,fixed)))))
-       ,fobj)))
+(define-compiler-macro make-advisable
+    (&whole whole symbol &key arguments force-use-arguments)
+  (declare (ignore force-use-arguments))
+  (if (atom arguments)
+      whole
+      `(let ((fn (make-instance
+                  'advisable-function
+                  :main ,symbol
+                  :arguments ,arguments
+                  :dispatcher-generator
+                  (lambda (obj)
+                    (lambda ,(cadr arguments)
+                      ,(format nil "Advisable function dispatcher for ~A" symbol)
+                      ,@(generate-ignore-declarations (cadr arguments))
+                      (let ((fixed ,(argument-list-to-apply-list
+                                     (cadr arguments))))
+                        (apply-before obj fixed)
+                        (multiple-value-prog1 (apply-around obj fixed)
+                          (apply-after obj fixed))))))))
+         (if (and (typep ,symbol 'symbol) fn)
+             (restart-case (setf (symbol-function ,symbol) fn)
+               (abort ()
+                 :report (lambda (s)
+                           (format s "Abort conversion of ~A to be advisable"
+                                   ,symbol))
+                 fn))
+             fn))))
 
-(defmacro convert-to-advisable (symbol &optional arglist)
-  (with-gensyms (rest)
-    `(make-install-advisable-function-dispatcher ,(or arglist
-                                                      `(&rest ,rest))
-                                                 (symbol-function ,symbol))))
-
-(defmacro make-advisable (symbol &optional argslist)
-  "Take a quoted symbol and convert the function denoted by it to an advisable 
-function. If argslist is provided, it must match the symbols functions argument
-list. if argslist is nil, a single &rest argument will be used."
-  `(let ((fn (symbol-function ,symbol)))
-     (if (typep fn 'advisable-function)
-         (error "~A is already an advisable function" ,symbol)
-         (setf (symbol-function ,symbol)
-               (convert-to-advisable ,symbol ,argslist)))))
+(define-condition not-an-advisable-function (error)
+  ((fn :initarg :function :reader not-an-advisable-function-function))
+  (:report
+   (lambda (c s)
+     (format s "~A is not an advisable function"
+             (not-an-advisable-function-function c)))))
 
 (defun make-unadvisable (symbol)
+  (check-type symbol symbol)
   (let ((fn (symbol-function symbol)))
     (if (typep fn 'advisable-function)
         (setf (symbol-function symbol)
               (advisable-function-main fn))
-        (error "~A is not an advisable function" symbol))))
+        (error 'not-an-advisable-function :function symbol))))
 
 (defun copy-advice (fn1 fn2)
   "DESTRUCTIVELY Copy all advice from FN1 to FN2"
@@ -225,35 +324,104 @@ list. if argslist is nil, a single &rest argument will be used."
         (advisable-function-after  fn2) (advisable-function-after  fn1)))
 
 (defmacro advisable-lambda (argslist &body body)
-  "Return an advisable function object"
-  `(make-install-advisable-function-dispatcher
-    ,argslist (lambda ,argslist ,@body)))
+  (with-gensyms (fobj fixed)
+    `(let ((,fobj (make-advisable-function (lambda ,argslist ,@body)
+                                           :arguments ',argslist)))
+       (install-advisable-function-dispatcher
+        ,fobj
+        (lambda ,argslist
+          ,@(generate-ignore-declarations argslist)
+          (let ((,fixed ,(argument-list-to-apply-list argslist)))
+            (apply-before ,fobj ,fixed)
+            (multiple-value-prog1
+                (apply-around ,fobj ,fixed)
+              (apply-after ,fobj ,fixed)))))
+       ,fobj)))
 
 (defmacro defun-advisable (name argslist &body body)
   "Define a function as an advisable function - works the same as DEFUN."
   (with-gensyms (oldfn)
     `(let ((,oldfn (handler-case (symbol-function ',name)
                      (undefined-function () nil))))
-       (if ,oldfn
-           (progn
-             (setf (symbol-function ',name)
-                   (advisable-lambda ,argslist ,@body))
-             (when (equal (advisable-function-arguments ,oldfn) ',argslist)
-               (copy-advice ,oldfn (symbol-function ',name))))
-           (progn (defun ,name ,argslist ,@body)
-                  (make-advisable ',name ,argslist))))))
+       (defun ,name ,argslist ,@body)
+       (make-advisable ',name :arguments ',argslist)
+       (when (and ,oldfn
+                  (not (eql (advisable-function-arguments ,oldfn) :not-provided))
+                  (equal (advisable-function-arguments ,oldfn) ',argslist))
+         (copy-advice ,oldfn (symbol-function ',name))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Implicit Conversion ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar *allow-implicit-conversion* t
+  "Controls whether variables can implicitly be converted to advisable
+functions.  When NIL implicit conversion signals an error.")
+
+(define-condition implicit-conversion-to-advisable-function (error)
+  ((function-being-converted :initarg :function :reader function-being-converted))
+  (:report
+   (lambda (c s)
+     (format s "~A is being implicitly converted to an advisable function"
+             (function-being-converted c)))))
+
+(defun ensure-advisable-function (symbol &optional arguments force-use-arguments)
+  (check-type symbol (or symbol function))
+  (let ((fn (if (symbolp symbol)
+                (symbol-function symbol)
+                symbol)))
+    (flet ((convert ()
+             (make-advisable symbol
+                             :arguments arguments
+                             :force-use-arguments force-use-arguments)))
+      (cond ((advisable-function-p fn)
+             fn)
+            (*allow-implicit-conversion*
+             (convert))
+            (t (restart-case (error 'implicit-conversion-to-advisable-function
+                                    :function symbol)
+                 (allow-conversion ()
+                   (convert))
+                 (return-value (value)
+                   :report (lambda (stream)
+                             (format stream
+                                     "Provide a value to return from ensure-advisable-function"))
+                   :interactive (lambda ()
+                                  (format *query-io* "Enter a value: ")
+                                  (multiple-value-list (eval (read))))
+                   :test (lambda (condition)
+                           (typep condition
+                                  'implicit-conversion-to-advisable-function))
+                   (return-from ensure-advisable-function value))))))))
+
+(defun ensure-unadvisable-function (symbol)
+  (handler-case (make-unadvisable symbol)
+    (not-an-advisable-function () nil)))
+
+(defmacro with-implicit-conversion
+    ((allow-or-not &optional abort-on-implicit-conversion return-on-abort)
+     &body body)
+  "Allow or disallow implicit conversions to advisable functions.  
+
+If ALLOWED-OR-NOT is :allowed then conversions are allowed, otherwise they are
+disallowed.
+
+If ABORT-ON-IMPLICIT-CONVERSION is T, a handler is established for implicit
+conversion errors which immediately returns RETURN-ON-ABORT."
+  (with-gensyms (blockname c)
+    `(let ((*allow-implicit-conversion* (eql ,allow-or-not :allowed)))
+       ,@(if abort-on-implicit-conversion
+             `((block ,blockname
+                 (handler-bind ((implicit-conversion-to-advisable-function
+                                  (lambda (,c)
+                                    (declare (ignore ,c))
+                                    (return-from ,blockname ,return-on-abort))))
+                   (locally ,@body))))
+             body))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Adding and Removing Advice ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun ensure-advisable-function (fn)
-  (let ((f (typecase fn
-             (symbol (symbol-function fn))
-             (advisable-function fn))))
-    (if (advisable-function-p f)
-        f
-        (error "~A is not an advisable function" fn))))
 
 (defun add-advice-around (function advice-fn &key allow-duplicates (test 'eql) from-end)
   (let* ((advise (ensure-advisable-function function))

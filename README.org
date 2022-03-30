@@ -35,6 +35,29 @@ A lightweight and portable system for advising functions in Common Lisp.
   more information, see the docstrings of the functions and macros exported in
   =package.lisp=.
 
+** Making Functions Advisable
+   When making functions advisable, the original function object is wrapped in a
+   funcallable object which has a dispatch function as its main function. This
+   conversion is done through the function ~make-advisable~. By default,
+   functions are converted to be advisable implicitly, through the function
+   ~ensure-advisable-function~. This is controlled by the dynamic variable
+   ~*allow-implicit-conversion*~, and can be enabled or disabled for a body of
+   code through the macro ~with-implicit-conversion~. If conversion
+
+*** ~MAKE-ADVISABLE~
+    This function creates an advisable function object and, if the function to
+    make advisable is a symbol, rebinds the symbol-function to this new
+    function. In addition it defines a dispatcher function for the advisable
+    function object. 
+    
+    When defining the dispatch function all care will be taken to preserve the
+    original argument list, however this isnt guaranteed. The function
+    ~make-advisable~ has a compiler macro defined for it which will define the
+    dispatcher function with correct arguments if they are provided. However a
+    compiler macro may not always be called. For this reason the argument
+    ~force-use-arguments~ is provided which forces generation of a dispach
+    function with the correct argument list by using ~eval~.
+    
 ** Redefining functions
    The macro ~defun-advisable~ copies existing advice if and only if the
    function has the same argument list (as compared by ~equal~).
