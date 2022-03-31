@@ -330,18 +330,18 @@ Otherwise a generic dispatcher is used which takes a rest argument."
 
 (defmacro advisable-lambda (argslist &body body)
   (with-gensyms (fobj fixed)
-    `(let ((,fobj (make-advisable-function (lambda ,argslist ,@body)
-                                           :arguments ',argslist)))
-       (install-advisable-function-dispatcher
-        ,fobj
-        (lambda ,argslist
-          ,@(generate-ignore-declarations argslist)
-          (let ((,fixed ,(argument-list-to-apply-list argslist)))
-            (apply-before ,fobj ,fixed)
-            (multiple-value-prog1
-                (apply-around ,fobj ,fixed)
-              (apply-after ,fobj ,fixed)))))
-       ,fobj)))
+    `(make-instance 'advisable-function
+                    :main #'(lambda ,argslist ,@body)
+                    :arguments ',argslist
+                    :dispatcher-generator 
+                    #'(lambda (,fobj)
+                        #'(lambda ,argslist
+                            ,(format nil "Advisable function dispatcher")
+                            ,@(generate-ignore-declarations argslist)
+                            (let ((,fixed ,(argument-list-to-apply-list argslist)))
+                              (apply-before ,fobj ,fixed)
+                              (multiple-value-prog1 (apply-around ,fobj ,fixed)
+                                (apply-after ,fobj ,fixed))))))))
 
 (defmacro defun-advisable (name argslist &body body)
   "Define a function as an advisable function - works the same as DEFUN."
@@ -400,8 +400,12 @@ functions.  When NIL implicit conversion signals an error.")
                    (return-from ensure-advisable-function value))))))))
 
 (defun ensure-unadvisable-function (symbol)
-  (handler-case (make-unadvisable symbol)
-    (not-an-advisable-function () nil)))
+  (handler-bind ((not-an-advisable-function
+                   (lambda (c)
+                     (let ((r (find-restart 'continue c)))
+                       (when r
+                         (invoke-restart r))))))
+    (make-unadvisable symbol)))
 
 (defmacro with-implicit-conversion
     ((allow-or-not &optional abort-on-implicit-conversion return-on-abort)
@@ -482,16 +486,14 @@ conversion errors which immediately returns RETURN-ON-ABORT."
 :after. If ALLOW-DUPLICATES is true, advice will be added regardless. TEST is used
 to check if ADVICE-FUNCTION is already present. When FROM-END is true, advice will
 be appended instead of prepended."
-  (case where
-    (:before (add-advice-before function advice-function
-                                :allow-duplicates allow-duplicates
-                                :test test :from-end from-end))
-    (:around (add-advice-around function advice-function
-                                :allow-duplicates allow-duplicates
-                                :test test :from-end from-end))
-    (:after (add-advice-after function advice-function
-                              :allow-duplicates allow-duplicates
-                              :test test :from-end from-end))))
+  (apply (ccase where
+           ((:before) 'add-advice-before)
+           ((:around) 'add-advice-around)
+           ((:after)  'add-advice-after))
+         (list function advice-function
+               :allow-duplicates allow-duplicates
+               :test test
+               :from-end from-end)))
 
 (defun replace-advice-before (function old-advice new-advice test if-not-found)
   (let* ((advise (ensure-advisable-function function))
@@ -534,13 +536,11 @@ be appended instead of prepended."
   "Replace OLD-ADVICE with NEW-ADVICE in the advice list for FUNCTION denoted by 
 WHERE. TEST is used to find OLD-ADVICE. IF-NOT-FOUND dictates what to do in the 
 event OLD-ADVICE is not present. It may be one of :prepend, :append, or nil."
-  (case where
-    (:before (replace-advice-before function old-advice new-advice
-                                    test if-not-found))
-    (:around (replace-advice-around function old-advice new-advice
-                                    test if-not-found))
-    (:after  (replace-advice-after  function old-advice new-advice
-                                    test if-not-found))))
+  (apply (ccase where
+           ((:before) 'replace-advice-before)
+           ((:around) 'replace-advice-around)
+           ((:after) 'replace-advice-after))
+         (list function old-advice new-advice test if-not-found)))
 
 (defmacro define-advisory-functions ((to-advise &key (next-arg 'next)) args  &body advice)
   "Define advisable functions and add them to TO-ADVISE. "

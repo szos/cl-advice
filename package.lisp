@@ -5,11 +5,13 @@
   (:export #:advisable-function-p
            #:make-advisable
 	   #:make-unadvisable
+           #:ensure-advisable-function
+           #:ensure-unadvisable-function
+           #:with-implicit-conversion
+           
            #:advisable-lambda
            #:defun-advisable
-           #:ensure-advisable-function
-           #:with-implicit-conversion
-
+           
            #:*allow-implicit-conversion*
 
            #:define-advisory-functions
