@@ -200,4 +200,8 @@
 
   
   (is (string= (foutput 'values-main 'a 'b) "Before(A B)After(A B)")
-      "Eval after adding before/after advice"))
+      "Eval after adding before/after advice")
+
+  (make-unadvisable 'values-main)
+  
+  (is (not (advisable-function-p #'values-main)) "Is unadvisable"))

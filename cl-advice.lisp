@@ -310,12 +310,17 @@ Otherwise a generic dispatcher is used which takes a rest argument."
              (not-an-advisable-function-function c)))))
 
 (defun make-unadvisable (symbol)
-  (check-type symbol symbol)
-  (let ((fn (symbol-function symbol)))
+  (check-type symbol (or symbol function))
+  (let ((fn (typecase symbol
+              (symbol (symbol-function symbol))
+              (function symbol))))
     (if (typep fn 'advisable-function)
-        (setf (symbol-function symbol)
-              (advisable-function-main fn))
-        (error 'not-an-advisable-function :function symbol))))
+        (if (symbolp symbol)
+            (setf (symbol-function symbol)
+                  (advisable-function-main fn))
+            (advisable-function-main fn))
+        (restart-case (error 'not-an-advisable-function :function symbol)
+          (continue () fn)))))
 
 (defun copy-advice (fn1 fn2)
   "DESTRUCTIVELY Copy all advice from FN1 to FN2"
