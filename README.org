@@ -35,6 +35,29 @@ A lightweight and portable system for advising functions in Common Lisp.
   more information, see the docstrings of the functions and macros exported in
   =package.lisp=.
 
+** Making Functions Advisable
+   When making functions advisable, the original function object is wrapped in a
+   funcallable object which has a dispatch function as its main function. This
+   conversion is done through the function ~make-advisable~. By default,
+   functions are converted to be advisable implicitly, through the function
+   ~ensure-advisable-function~. This is controlled by the dynamic variable
+   ~*allow-implicit-conversion*~, and can be enabled or disabled for a body of
+   code through the macro ~with-implicit-conversion~. If conversion
+
+*** ~MAKE-ADVISABLE~
+    This function creates an advisable function object and, if the function to
+    make advisable is a symbol, rebinds the symbol-function to this new
+    function. In addition it defines a dispatcher function for the advisable
+    function object. 
+    
+    When defining the dispatch function all care will be taken to preserve the
+    original argument list, however this isnt guaranteed. The function
+    ~make-advisable~ has a compiler macro defined for it which will define the
+    dispatcher function with correct arguments if they are provided. However a
+    compiler macro may not always be called. For this reason the argument
+    ~force-use-arguments~ is provided which forces generation of a dispach
+    function with the correct argument list by using ~eval~.
+    
 ** Redefining functions
    The macro ~defun-advisable~ copies existing advice if and only if the
    function has the same argument list (as compared by ~equal~).
@@ -108,3 +131,178 @@ A lightweight and portable system for advising functions in Common Lisp.
    0: FIB returned 5
   5 (3 bits, #x5, #o5, #b101)
 #+END_SRC
+
+* Documentation
+  
+** Function ~ADVISABLE-FUNCTION-P~
+   *advisable-function-p* /function/
+
+   Returns T if /function/ is an advisable function. 
+   
+   - Arguments and Values
+     - /function/ - a object
+
+** Function ~MAKE-ADVISABLE~
+   *make-advisable* /symbol/ &key /arguments force-use-arguments/
+
+   Converts a function to an advisable function. If /symbol/ is a symbol, then
+   the function denoted by it is converted and the ~symbol-function~ of /symbol/
+   is set to the new advisable function. If /symbol/ is a function object it is
+   converted to an advisable function and returned.
+
+   When /arguments/ is provided and the call is being compiled, a compiler macro
+   will generate a dispatcher function with this argument list. If the call is
+   not being compiled or the compiler macro is not triggered then a generic
+   dispatcher argument list is used.
+
+   When /force-use-arguments/ is T and the compiler macro is not triggered,
+   ~eval~ is used to generate a dispatcher function that uses /arguments/ for
+   its argument list. 
+
+   - Arguments and Values
+     - /symbol/ - a symbol denoting a function or a function object
+     - /arguments/ - the argument list of /symbol/
+     - /force-use-arguments/ - When T force the usage of /arguments/ for the
+       advisable function dispatcher function. 
+
+** Function ~MAKE-UNADVISABLE~
+   *make-unadvisable* /symbol/
+
+   Convert an advisable function to be unadvisable. If /symbol/ is a symbol then
+   the function referred to by /symbol/ is converted to be unadvisable and
+   /symbol/ has its ~symbol-function~ rebound to this function. If /symbol/ is a
+   function object the unadvisable function is returned.
+
+   - Arguments and Values
+     - /symbol/ - a symbol or function to convert to be unadvisable
+
+** Function ~ENSURE-ADVISABLE-FUNCTION~
+   *ensure-advisable-function* /symbol/ &optional /arguments force-use-arguments/
+
+   Returns an advisable function or signals an error. If /symbol/ denotes an
+   unadvisable function and ~*allow-implicit-conversion*~ is T then /symbol/ is
+   converted via ~make-advisable~. If ~*allow-implicit-conversion*~ is NIL, then
+   an error of type ~implicit-conversion-to-advisable-function~ is signalled
+   with two restarts established around it. These restarts are ~allow-conversion~,
+   which converts the function, and ~return-value~, which takes a value to
+   return. When called interactively the return-value restart reads and
+   evaluates a value from the user.
+
+   When implicitly converting a function to be advisable, /arguments/ and
+   /force-use-arguments/ are passed to ~make-advisable~.
+
+   - Arguments and Values
+     - /symbol/ - a symbol or function object
+     - /arguments/ - a argument list
+     - /force-use-arguments/ - a true or false value
+
+** Function ~ENSURE-UNADVISABLE-FUNCTION~
+   *ensure-unadvisable-function* /symbol/
+
+   Calls ~make-unadvisable~ on /symbol/ and return an unadvisable function.
+
+   - Arguments and Values
+     - /symbol/ - a symbol or function object 
+   
+** Macro ~WITH-IMPLICIT-CONVERSION~
+   *with-implicit-conversion* (/allow-or-not/ &optional /abort-on-implicit-conversion return-on-abort/) &body /body/
+   
+   Binds the variable ~*allow-implicit-conversion*~ to T or NIL based upon
+   whether /allow-or-not/ is ~eql~ to ~:allowed~, where /allow-or-not/ is
+   evaluated at runtime. If /abort-on-implicit-conversion/ is true (at
+   macroexpansion time) then if ~implicit-conversion-to-advisable-function~ is
+   signalled then control leaves /body/ immediately, and /return-on-abort/ is
+   returned.
+
+** Macro ~ADVISABLE-LAMBDA~
+   *advisable-lambda* /argslist/ &body /body/
+
+   Functions the same as ~lambda~, but returns an advisable function object.
+
+   - Arguments and Values
+     - /argslist/ - a function argument list
+     - /body/ - A function body
+
+** Macro ~DEFUN-ADVISABLE~
+   *defun-advisable* /name argslist/ &body /body/
+
+   Functions the same as ~defun~ but defines an advisable function.
+   
+   - Arguments and Values
+     - /name/ - an unquoted symbol denoting the name for the function
+     - /argslist/ - a function argument list
+     - /body/ - A function body   
+
+** Dynamic Variable ~*ALLOW-IMPLICIT-CONVERSION*~
+   Variable with the default value of T. When T, allow
+   ~ensure-advisable-function~ to implicitly convert unadvisable functions to be
+   advisable. When NIL, signal an error when attempting to implicitly convert an
+   unadvisable function. 
+
+** Function ~ADD-ADVICE~
+   *add-advice* /where function advice-function/ &key /allow-duplicates test from-end/
+
+   Advise /function/ with /advice-function/. If /allow-duplicates/ is NIL, test
+   for duplicates using /test/.
+
+   - Arguments and Values
+     - /where/ - a keyword denoting the kind of advice /advice-function/
+       is. Must be one of ~:before~, ~:after~, or ~:around~.
+     - /function/ - a symbol or function object
+     - /advice-function/ - the advice function to install.
+     - /allow-duplicates/ - a true or false value. When true duplicate advice is
+       allowed.
+     - /test/ - a function to compare pieces of advice. Used when
+       /allow-duplicates/ is NIL
+     - /from-end/ - Determines where to add the advice in its appropriate advice
+       list. When T add the advice at the end of the advice list, when NIL add
+       it at the beginning. 
+
+** Function ~REPLACE-ADVICE~
+   *replace-advice* /where function old-advice new-advice/ &key /test if-not-found/
+
+   Replace a piece of advice.
+
+   - Arguments and Values
+     - /where/ - a symbol denoting the type of advice to replace, one of
+       ~:before~, ~:around~, or ~:after~
+     - /function/ - the function to replace the advice for
+     - /old-advice/ - the advice to replace
+     - /new-advice/ - the advice to replace /old-advice/ with
+     - /test/ - a function to compare advice
+     - /if-not-found/ - A keyword denoting what to do if /old-advice/ isnt
+       found. Must be one of ~:prepend~, ~:append~, or NIL. 
+
+** Function ~LIST-ADVICE~
+   *list-advice* /fn/ &key /type print/
+
+   Lists advice for /fn/.
+
+   - Arguments and Values
+     - /fn/ - a function to print advice for
+     - /type/ - a keyword denoting what kind of advice to list. Must be one of
+       ~:all~, ~:before~, ~:around~, or ~:after~.
+     - /print/ - when true print all advice to standard output.
+
+** Function ~REMOVE-ADVICE~
+   *remove-advice* /type fn advice/ &key /test/
+
+   Remove /advice/ from /fn/.
+
+   - Arguments and Values
+     - /type/ - a keyword denoting which advice list to remove /advice/
+       from. Must be one of ~:all~, ~:before~, ~:around~, or ~:after~.
+     - /fn/ - a symbol or function object
+     - /advice/ - the piece of advice to remove
+     - /test/ - a function to compare pieces of advice
+
+** Function ~REMOVE-NTH-ADVICE~
+   *remove-nth-advice* /type fn nth/
+
+   Remove the /nth/ element of advice from /type/ advice list for /fn/. 
+
+   - Arguments and Values
+     - /type/ - a keyword denoting which advice list to remove the /nth/
+       from. Must be one of ~:before~, ~:after~, or ~:around~.
+     - /fn/ - the function to remove the advice from
+     - /nth/ - the element to remove

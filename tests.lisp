@@ -48,8 +48,11 @@
   (is (string= (foutput 'main) "main.") "Without advice")
   (is (not (advisable-function-p (symbol-function 'main))) "Not advisable")
 
-  (signals error (add-advice :before 'main 'before) "Add advice to non advisable fails")
-
+  (signals cl-advice:implicit-conversion-to-advisable-function
+    (cl-advice:with-implicit-conversion (:disallowed)
+      (add-advice :before 'main 'before))
+    "Add advice to non advisable fails")
+  
   (make-advisable 'main)
   (is (advisable-function-p (symbol-function 'main)) "Is advisable")
 
@@ -117,7 +120,10 @@
   (is (string= (foutput 'main-args 'x 'y) "main(X Y).") "Without advice")
   (is (not (advisable-function-p (symbol-function 'main-args))) "Not advisable")
 
-  (signals error (add-advice :before 'main-args 'before-args) "Add advice to non advisable fails")
+  (signals cl-advice:implicit-conversion-to-advisable-function
+    (cl-advice:with-implicit-conversion (:disallowed)
+      (add-advice :before 'main-args 'before-args))
+    "Add advice to non advisable fails")
 
   (make-advisable 'main-args)
   (is (advisable-function-p (symbol-function 'main-args)) "Is advisable")
@@ -180,7 +186,7 @@
   (is (equal (multiple-value-list (values-main 'a 'b)) (list 'a 'b))
       "Check unadvised return value")
 
-  (make-advisable 'values-main (a b))
+  (make-advisable 'values-main :arguments '(a b))
 
   (is (advisable-function-p #'values-main) "Is advisable")
   
@@ -194,4 +200,8 @@
 
   
   (is (string= (foutput 'values-main 'a 'b) "Before(A B)After(A B)")
-      "Eval after adding before/after advice"))
+      "Eval after adding before/after advice")
+
+  (make-unadvisable 'values-main)
+  
+  (is (not (advisable-function-p #'values-main)) "Is unadvisable"))
