@@ -21,4 +21,5 @@
            #:remove-advice
            #:remove-nth-advice
 
-           #:implicit-conversion-to-advisable-function))
+           #:implicit-conversion-to-advisable-function
+           #:circular-advice-dependency))

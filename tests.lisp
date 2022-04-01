@@ -205,3 +205,35 @@
   (make-unadvisable 'values-main)
   
   (is (not (advisable-function-p #'values-main)) "Is unadvisable"))
+
+(defun circular-a ()
+  (format t "circular-a."))
+
+(defun circular-b ()
+  (format t "circular-b."))
+
+(defun circular-c ()
+  (format t "circular-c."))
+
+(defun circular-d ()
+  (format t "circular-d."))
+
+(def-test advice-circular-dependency-test ()
+  (mapc #'(lambda (f)
+            (make-advisable f :arguments '()))
+        '(circular-a circular-b circular-c circular-d))
+
+  (add-advice :before 'circular-a 'circular-b)
+  (add-advice :before 'circular-b 'circular-c)
+  (add-advice :before 'circular-c 'circular-d)
+  (signals cl-advice:circular-advice-dependency
+    (add-advice :before 'circular-d 'circular-a))
+  (signals cl-advice:circular-advice-dependency
+    (add-advice :around 'circular-d 'circular-a))
+  (signals cl-advice:circular-advice-dependency
+    (add-advice :after 'circular-d 'circular-a))
+  (mapc #'(lambda (f)
+            (make-unadvisable f))
+        '(circular-a circular-b circular-c circular-d)))
+
+
