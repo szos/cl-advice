@@ -432,6 +432,56 @@ conversion errors which immediately returns RETURN-ON-ABORT."
 ;;; Adding and Removing Advice ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-condition circular-advice-dependency (error)
+  ((f1 :initarg :function :reader circular-advice-function)
+   (f2 :initarg :advice :reader circular-advice-advice))
+  (:report
+   (lambda (c s)
+     (format s "Circular advice detected between ~A and ~A.
+
+~A is a piece of advice for ~A, 
+either directly or through one of its pieces of advice."
+             (circular-advice-function c)
+             (circular-advice-advice c)
+             (circular-advice-function c)
+             (circular-advice-advice c)))))
+
+(defun circular-advice-p (function advice-fn &key (test 'eql))
+  "check if theres a circular dependency between FUNCTION and ADVICE-FN."
+  (let ((normalized-function (if (symbolp function)
+                                 (symbol-function function)
+                                 function))
+        (normalized-advice-fn (if (symbolp advice-fn)
+                                  (symbol-function advice-fn)
+                                  advice-fn)))
+    (labels ((compare (f adv where)
+               (let ((normalized-f (if (symbolp f)
+                                       (symbol-function f)
+                                       f)))
+                 (when (funcall test normalized-f normalized-function)
+                   (restart-case 
+                       (error 'circular-advice-dependency :function function
+                                                          :advice advice-fn)
+                     (remove-advice ()
+                       :report (lambda (s)
+                                 (format s "Remove ~A from ~A's ~A advice list and continue advice installation"
+                                         f adv where))
+                       (remove-advice where adv f))))
+                 (when (advisable-function-p normalized-f)
+                   (circularp normalized-f))))
+             (circularp (adv)
+               (when (advisable-function-p adv)
+                 (mapc #'(lambda (f)
+                           (compare f adv :before))
+                       (advisable-function-before adv))
+                 (mapc #'(lambda (f)
+                           (compare f adv :around))
+                       (advisable-function-around adv))
+                 (mapc #'(lambda (f)
+                           (compare f adv :after))
+                       (advisable-function-after adv)))))
+      (circularp normalized-advice-fn))))
+
 (defun add-advice-around (function advice-fn &key allow-duplicates (test 'eql) from-end)
   (let* ((advise (ensure-advisable-function function))
          (list (advisable-function-around advise))
@@ -486,6 +536,14 @@ conversion errors which immediately returns RETURN-ON-ABORT."
 :after. If ALLOW-DUPLICATES is true, advice will be added regardless. TEST is used
 to check if ADVICE-FUNCTION is already present. When FROM-END is true, advice will
 be appended instead of prepended."
+  (restart-case (circular-advice-p function advice-function)
+    (abort-advice-installation ()
+      :report (lambda (s)
+                (format s "Abort installation of ~A advice ~A in function ~A"
+                        where advice-function function))
+      :test (lambda (c)
+              (typep c 'circular-advice-dependency))
+      (return-from add-advice nil)))
   (apply (ccase where
            ((:before) 'add-advice-before)
            ((:around) 'add-advice-around)
@@ -621,10 +679,11 @@ standard output."
 
 (defun remove-nth-advice (type fn nth)
   "Remove NTH advice advice from FNs advice list of type TYPE."
-  (case type
-    (:before (remove-nth-advice-before fn nth))
-    (:around (remove-nth-advice-around fn nth))
-    (:after  (remove-nth-advice-after  fn nth))))
+  (apply (ccase type
+           ((:before) 'remove-nth-advice-before)
+           ((:around) 'remove-nth-advice-around)
+           ((:after)  'remove-nth-advice-after))
+         fn nth))
 
 (macrolet ((generate-remove-advice (type checker)
              ;; generate remove-*-advice-if/-not functions 

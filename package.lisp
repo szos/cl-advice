@@ -4,7 +4,7 @@
   (:use #:cl)
   (:export #:advisable-function-p
            #:make-advisable
-	   #:make-unadvisable
+           #:make-unadvisable
            #:ensure-advisable-function
            #:ensure-unadvisable-function
            #:with-implicit-conversion
@@ -21,4 +21,5 @@
            #:remove-advice
            #:remove-nth-advice
 
-           #:implicit-conversion-to-advisable-function))
+           #:implicit-conversion-to-advisable-function
+           #:circular-advice-dependency))

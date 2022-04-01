@@ -291,9 +291,10 @@ A lightweight and portable system for advising functions in Common Lisp.
 
    - Arguments and Values
      - /type/ - a keyword denoting which advice list to remove /advice/
-       from. Must be one of ~:all~, ~:before~, ~:around~, or ~:after~.
+       from. Must be one of ~:before~, ~:around~, or ~:after~.
      - /fn/ - a symbol or function object
-     - /advice/ - the piece of advice to remove
+     - /advice/ - the piece of advice to remove. Must be a symbol, function, or
+       the keyword ~:all~. 
      - /test/ - a function to compare pieces of advice
 
 ** Function ~REMOVE-NTH-ADVICE~
