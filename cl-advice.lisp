@@ -537,13 +537,19 @@ either directly or through one of its pieces of advice."
 to check if ADVICE-FUNCTION is already present. When FROM-END is true, advice will
 be appended instead of prepended."
   (restart-case (circular-advice-p function advice-function)
-    (abort-advice-installation ()
+    (abort ()
       :report (lambda (s)
                 (format s "Abort installation of ~A advice ~A in function ~A"
                         where advice-function function))
       :test (lambda (c)
               (typep c 'circular-advice-dependency))
-      (return-from add-advice nil)))
+      (return-from add-advice (values)))
+    (continue ()
+      :report (lambda (s)
+                (format s "Advise ~A with ~A despite circular dependency"
+                        function advice-function))
+      :test (lambda (c) (typep c 'circular-advice-dependency))
+      nil))
   (apply (ccase where
            ((:before) 'add-advice-before)
            ((:around) 'add-advice-around)
