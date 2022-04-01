@@ -235,5 +235,3 @@
   (mapc #'(lambda (f)
             (make-unadvisable f))
         '(circular-a circular-b circular-c circular-d)))
-
-
