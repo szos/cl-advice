@@ -8,6 +8,7 @@
            #:ensure-advisable-function
            #:ensure-unadvisable-function
            #:with-implicit-conversion
+           #:with-unadvisable-function
            
            #:advisable-lambda
            #:defun-advisable

@@ -322,6 +322,78 @@ Otherwise a generic dispatcher is used which takes a rest argument."
         (restart-case (error 'not-an-advisable-function :function symbol)
           (continue () fn)))))
 
+(defun call-with-unadvisable-function (function-symbol thunk
+                                       &key (restore-with-changes t))
+  "Implement WITH-ADVISABLE-FUNCTIONs logic. FUNCTION-SYMBOL has its symbol
+function bound to the main function of the advisable function object that
+FUNCTION-SYMBOL currently refers to. Then THUNK is called, and finally the
+original advisable function is restored. If FUNCTION-SYMBOL names an unadvisable
+function then thunk is called."
+  (check-type function-symbol symbol)
+  (let* ((function (symbol-function function-symbol))
+         (fn (when (advisable-function-p function)
+               (advisable-function-main function))))
+    (if fn
+        (progn (setf (symbol-function function-symbol) fn)
+               (unwind-protect (funcall thunk)
+                 (when restore-with-changes
+                   (setf (advisable-function-main function)
+                         (symbol-function function-symbol)))
+                 (setf (symbol-function function-symbol) function)))
+        (funcall thunk))))
+
+(defmacro with-unadvisable-function
+    (&whole whole (function-symbol &key (restore-with-changes t)) &body body)
+  "Evaluate BODY in a context where the symbol function of FUNCTION-SYMBOL is
+bound to the main function of the advisable function. The intended use of this
+macro is for when access to the main function is needed, but it is undesireable
+to unadvise the function in question, for example when defining methods for a
+generic function which has had advice installed.
+
+When FUNCTION-SYMBOL names an advisable function then the main function (the
+advised function) is aquired and the symbol-function of FUNCTION-SYMBOL is bound
+to it. BODY is then evaluated. The evaluation is body is protected with cleanup
+forms which restore the symbol-function of FUNCTION-SYMBOL to refer to the
+advisable function object. When RESTORE-WITH-CHANGES is T then the main function
+of the advisable function object (ie the function being advised) is set to the
+current symbol-function of FUNCTION-SYMBOL.
+
+When FUNCTION-SYMBOL names an unadvisable function, then BODY is evaluated.
+
+When FUNCTION-SYMBOL is not fbound, a continuable error of type unbound-function
+is signaled. In addition to the continue restart, a restart named
+BIND-SYMBOL-FUNCTION is established which will read and evaluate a form, and set
+the symbol-function of FUNCTION-SYMBOL to this form, before re-attempting to
+evaluate BODY within the context described above."
+  (with-gensyms (local-fn bind-restart-fn tag)
+    `(flet ((,local-fn ()
+              ,@body))
+       (declare (dynamic-extent #',local-fn))
+       (tagbody
+          ,tag
+          (if (fboundp ',function-symbol)
+              (call-with-unadvisable-function ',function-symbol #',local-fn
+                                              :restore-with-changes
+                                              ,restore-with-changes)
+              (restart-case 
+                  (cerror
+                   ,(format nil
+                            "Continue without evaluating the body of (~S ~S ...)"
+                            (car whole)
+                            (cadr whole))
+                   'undefined-function :name ',function-symbol)
+                (bind-symbol-function (,bind-restart-fn)
+                  :report ,(format nil
+                                   "Set the symbol-function of ~A to a function and evaluate the body of (~S ~S ...)"
+                                   function-symbol
+                                   (car whole)
+                                   (cadr whole))
+                  :interactive (lambda ()
+                                 (format *query-io* "Enter a form to be evaluated")
+                                 (list (eval (read *query-io*))))
+                  (setf (symbol-function ',function-symbol) ,bind-restart-fn)
+                  (go ,tag))))))))
+
 (defun copy-advice (fn1 fn2)
   "DESTRUCTIVELY Copy all advice from FN1 to FN2"
   (setf (advisable-function-before fn2) (advisable-function-before fn1)
