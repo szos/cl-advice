@@ -343,7 +343,7 @@ function then thunk is called."
         (funcall thunk))))
 
 (defmacro with-unadvisable-function
-    (&whole whole (function-symbol &key (restore-with-changes t)) &body body)
+    ((function-symbol &key (restore-with-changes t rwcpp)) &body body)
   "Evaluate BODY in a context where the symbol function of FUNCTION-SYMBOL is
 bound to the main function of the advisable function. The intended use of this
 macro is for when access to the main function is needed, but it is undesireable
@@ -375,24 +375,32 @@ evaluate BODY within the context described above."
               (call-with-unadvisable-function ',function-symbol #',local-fn
                                               :restore-with-changes
                                               ,restore-with-changes)
-              (restart-case 
-                  (cerror
-                   ,(format nil
-                            "Continue without evaluating the body of (~S ~S ...)"
-                            (car whole)
-                            (cadr whole))
-                   'undefined-function :name ',function-symbol)
-                (bind-symbol-function (,bind-restart-fn)
-                  :report ,(format nil
-                                   "Set the symbol-function of ~A to a function and evaluate the body of (~S ~S ...)"
-                                   function-symbol
-                                   (car whole)
-                                   (cadr whole))
-                  :interactive (lambda ()
-                                 (format *query-io* "Enter a form to be evaluated")
-                                 (list (eval (read *query-io*))))
-                  (setf (symbol-function ',function-symbol) ,bind-restart-fn)
-                  (go ,tag))))))))
+              ,(let ((form-print
+                       (concatenate 'string
+                                    (format nil "(WITH-UNADVISABLE-FUNCTION (~S"
+                                            function-symbol)
+                                    (format nil "~A) ...)"
+                                            (if rwcpp
+                                                (format nil
+                                                        " :RESTORE-WITH-CHANGES ~S"
+                                                        restore-with-changes)
+                                                "")))))
+                 `(restart-case
+                      (cerror
+                       ,(format nil
+                                "Continue without evaluating the body of ~A"
+                                form-print)
+                       'undefined-function :name ',function-symbol)
+                    (bind-symbol-function (,bind-restart-fn)
+                      :report ,(format nil
+                                       "Set the symbol-function of ~A to a function and evaluate the body of ~A"
+                                       function-symbol
+                                       form-print)
+                      :interactive (lambda ()
+                                     (format *query-io* "Enter a form to be evaluated")
+                                     (list (eval (read *query-io*))))
+                      (setf (symbol-function ',function-symbol) ,bind-restart-fn)
+                      (go ,tag)))))))))
 
 (defun copy-advice (fn1 fn2)
   "DESTRUCTIVELY Copy all advice from FN1 to FN2"
