@@ -155,22 +155,28 @@ list and parses it into code to generate a list suitable for use with apply"
 ;; the documentation of all functions except the dispatcher
 (macrolet
     ((document-advisable-function (obj)
-       `(flet ((document-function (fn)
-                 (documentation fn 'function)))
-          (append
-           (list :before)
-           (when (advisable-function-before ,obj)
-             (remove nil (mapcar #'document-function
-                                 (advisable-function-before ,obj))))
-           (list :around)
-           (when (advisable-function-around ,obj)
-             (remove nil (mapcar #'document-function
-                                 (advisable-function-around ,obj))))
-           (list :main (document-function (advisable-function-main ,obj)))
-           (list :after)
-           (when (advisable-function-after ,obj)
-             (remove nil (mapcar #'document-function
-                                 (advisable-function-after ,obj))))))))
+       `(labels ((document-function (fn)
+                   (documentation fn 'function))
+                 (write-adv (s fnlist)
+                   (if fnlist
+                       (progn
+                         (terpri s)
+                         (mapcar (lambda (fn)
+                                   (format s "~A~%~A~&~%"
+                                           fn (document-function fn)))
+                                 fnlist))
+                       (progn
+                         (write-string " No Advice" s)
+                         (terpri s)))))
+          (with-output-to-string (s)
+            (write-string (document-function (advisable-function-main ,obj)) s)
+            (format s "~&~%[FROM CL-ADVICE] This function is advised with the following advice:~%~%")
+            (write-string "[BEFORE]" s)
+            (write-adv s (advisable-function-before ,obj))
+            (write-string "[AROUND]" s)
+            (write-adv s (advisable-function-around ,obj))
+            (write-string "[AFTER] " s)
+            (write-adv s (advisable-function-after ,obj))))))
   (defmethod cl:documentation ((obj advisable-function) (doctype (eql t)))
     (document-advisable-function obj))
   (defmethod cl:documentation ((obj advisable-function) (doctype (eql 'function)))
