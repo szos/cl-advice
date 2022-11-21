@@ -264,7 +264,17 @@ Otherwise a generic dispatcher is used which takes a rest argument."
 
 (defun make-advisable (symbol &key (arguments :not-provided args-provided-p)
                                 force-use-arguments)
-  "Make the function denoted by SYMBOL an advisable function"
+  "Make the function denoted by SYMBOL an advisable function.
+
+If SYMBOL is a function argument return the advisable function generated for
+it. If SYMBOL is a symbol set the symbol function of SYMBOL to the advisable
+function generated.
+
+If ARGUMENTS is provided it must be the argument list of the function being
+advised. When compiling this argument list will be used by the dispatching
+function. Otherwise if FORCE-USE-ARGUMENTS is T then eval will be used to
+generate the dispatcher function. Otherwise the dispatcher function will have a
+single &REST argument."
   (check-type symbol (or symbol function))
   (let ((fn (make-instance 'advisable-function
                            :main symbol
@@ -316,6 +326,11 @@ Otherwise a generic dispatcher is used which takes a rest argument."
              (not-an-advisable-function-function c)))))
 
 (defun make-unadvisable (symbol)
+  "Make SYMBOL unadvisable if it is an advisable function.
+
+When SYMBOL is a function object return the main function of the advisable
+function object. When SYMBOL is a symbol set the symbol function of SYMBOL to
+the main function of the advisable function object."
   (check-type symbol (or symbol function))
   (let ((fn (typecase symbol
               (symbol (symbol-function symbol))
@@ -705,7 +720,56 @@ event OLD-ADVICE is not present. It may be one of :prepend, :append, or nil."
          (list function old-advice new-advice test if-not-found)))
 
 (defmacro define-advisory-functions ((to-advise &key (next-arg 'next)) args  &body advice)
-  "Define advisable functions and add them to TO-ADVISE. "
+  "Define advisable functions and add them to TO-ADVISE.
+
+TO-ADVISE is a symbol denoting the function to advise.
+NEXT-ARG is the argument prepended to the argument list of around functions.
+ARGS is the argument list of TO-ADVISE, or a compatible argument list.
+
+BODY is a set of specifications for advice functions. A specification is a list
+of the shape (type forms*).
+
+Type is either a keyword or a list. If it is a list it must conform to one of
+two shapes: (keyword name &rest keyargs) or (keyword &rest keyargs).  The
+keyword must be one of :AROUND :BEFORE or :AFTER. If the name is a keyword then
+the second shape is assumed. Otherwise the first shape is assumed. The keyargs
+are passed to add-advice. If a name is given, then a function is defined using
+defun, otherwise an anonymous function is used. 
+
+forms* is a set of forms comprising a function body whose argument list is ARGS,
+or if it is around advice, the argument list is created by (cons NEXT-ARG ARGS).
+
+Example:
+
+(defun foo (bar)
+  (print bar))
+
+(define-advisory-functions (foo :next-arg fn) (bar)
+  (:before
+   (format t \"~&before FOO, passed ~A~&\" bar))
+  (:around
+   (format t \"~&around foo~&\")
+   (funcall fn bar)
+   (format t \"~&around foo~&\"))
+  ((:after foo-after)
+   (format t \"~&after foo, was passed ~A~&\" bar)))
+
+expands into
+
+(progn
+ (apply 'add-advice
+        (list :before 'foo
+              (lambda (bar) (format t \"~&before FOO, passed ~A~&\" bar))))
+ (apply 'add-advice
+        (list :around 'foo
+              (lambda (fn bar)
+                (format t \"~&around foo~&\")
+                (funcall fn bar)
+                (format t \"~&around foo~&\"))))
+ (progn
+  (defun foo-after (bar) (format t \"~&after foo, was passed ~A~&\" bar))
+  (apply 'add-advice (list :after 'foo 'foo-after))))
+"
   `(progn
      ,@(loop for (type . body) in advice
              for argslist = (if (eq (if (listp type) (car type) type) :around)
