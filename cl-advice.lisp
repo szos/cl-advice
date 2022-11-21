@@ -583,65 +583,33 @@ either directly or through one of its pieces of advice."
                        (advisable-function-after adv)))))
       (circularp normalized-advice-fn))))
 
-(defun add-advice-around (function advice-fn &key allow-duplicates (test 'eql) from-end)
-  (let* ((advise (ensure-advisable-function function))
-         (list (advisable-function-around advise))
-         (loc (member advice-fn list :test test)))
-    (unless (symbolp advice-fn)
-      (warn "advising ~A with anonymous function" function))
-    (if loc
-        (if allow-duplicates
-            (if from-end
-                (setf (cdr (last list)) (list advice-fn))
-                (push advice-fn (advisable-function-around advise)))
-            (setf (car loc) advice-fn))
-        (if from-end
-            (let ((last (last list))
-                  (list (list advice-fn)))
-              (if last
-                  (setf (cdr last) list)
-                  (setf (advisable-function-around advise) list)))
-            (push advice-fn (advisable-function-around advise))))))
-
-(defun add-advice-before (function advice-fn &key allow-duplicates (test 'eql) from-end)
-  (let* ((advise (ensure-advisable-function function))
-         (list (advisable-function-before advise))
-         (loc (member advice-fn list :test test)))
-    (unless (symbolp advice-fn)
-      (warn "advising ~A with anonymous function" function))
-    (if loc
-        (if allow-duplicates
-            (if from-end
-                (setf (cdr (last list)) (list advice-fn))
-                (push advice-fn (advisable-function-before advise)))
-            (setf (car loc) advice-fn))
-        (if from-end
-            (let ((last (last list))
-                  (list (list advice-fn)))
-              (if last
-                  (setf (cdr last) list)
-                  (setf (advisable-function-before advise) list)))
-            (push advice-fn (advisable-function-before advise))))))
-
-(defun add-advice-after (function advice-fn &key allow-duplicates (test 'eql) from-end)
-  (let* ((advise (ensure-advisable-function function))
-         (list (advisable-function-after advise))
-         (loc (member advice-fn list :test test)))
-    (unless (symbolp advice-fn)
-      (warn "advising ~A with anonymous function" function))
-    (if loc
-        (if allow-duplicates
-            (if from-end
-                (setf (cdr (last list)) (list advice-fn))
-                (push advice-fn (advisable-function-after advise)))
-            (setf (car loc) advice-fn))
-        (if from-end
-            (let ((last (last list))
-                  (list (list advice-fn)))
-              (if last
-                  (setf (cdr last) list)
-                  (setf (advisable-function-after advise) list)))
-            (push advice-fn (advisable-function-after advise))))))
+(macrolet ((define-add-advice (how)
+             (let ((accessor
+                     (cond ((string= how "before") 'advisable-function-before)
+                           ((string= how "around") 'advisable-function-around)
+                           ((string= how "after")  'advisable-function-after))))
+               `(defun ,(intern (string-upcase (format nil "add-advice-~A" how))
+                                (find-package :cl-advice))
+                    (function advice-fn &key allow-duplicates (test 'eql) from-end)
+                  (let* ((advise (ensure-advisable-function function))
+                         (list (,accessor advise))
+                         (loc (member advice-fn list :test test)))
+                    (unless (symbolp advice-fn)
+                      (warn "advising ~A with an anonymous function" function))
+                    (let ((last (last list)))
+                      (if loc
+                          (if allow-duplicates
+                              (if (and from-end last)
+                                  (setf (cdr last) (list advice-fn))
+                                  (push advice-fn (,accessor advise)))
+                              (setf (car loc) advice-fn))
+                          (if (and from-end last)
+                              (setf (cdr last) (list advice-fn))
+                              (push advice-fn (,accessor advise))))
+                      advice-fn))))))
+  (define-add-advice "before")
+  (define-add-advice "around")
+  (define-add-advice "after"))
 
 (defun add-advice (where function advice-function &key allow-duplicates (test 'eql)
                                                     from-end)
