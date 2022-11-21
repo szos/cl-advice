@@ -672,44 +672,36 @@ be appended instead of prepended."
                :test test
                :from-end from-end)))
 
-(defun replace-advice-before (function old-advice new-advice test if-not-found)
-  (let* ((advise (ensure-advisable-function function))
-         (loc (member old-advice (advisable-function-before advise) :test test)))
-    (if loc
-        (setf (car loc) new-advice)
-        (case if-not-found
-          (:prepend (push new-advice (advisable-function-before advise)))
-          (:append (setf (advisable-function-before advise)
-                         (append (advisable-function-before advise)
-                                 (list new-advice))))
-          (otherwise nil)))))
-
-(defun replace-advice-around (function old-advice new-advice test if-not-found)
-  (let* ((advise (ensure-advisable-function function))
-         (loc (member old-advice (advisable-function-around advise) :test test)))
-    (if loc
-        (setf (car loc) new-advice)
-        (case if-not-found
-          (:prepend (push new-advice (advisable-function-around advise)))
-          (:append (setf (advisable-function-around advise)
-                         (append (advisable-function-around advise)
-                                 (list new-advice))))
-          (otherwise nil)))))
-
-(defun replace-advice-after (function old-advice new-advice test if-not-found)
-  (let* ((advise (ensure-advisable-function function))
-         (loc (member old-advice (advisable-function-after advise) :test test)))
-    (if loc
-        (setf (car loc) new-advice)
-        (case if-not-found
-          (:prepend (push new-advice (advisable-function-after advise)))
-          (:append (setf (advisable-function-after advise)
-                         (append (advisable-function-after advise)
-                                 (list new-advice))))
-          (otherwise nil)))))
+(macrolet ((define-replace-advice (how)
+             (let ((accessor (cond ((string= how "before")
+                                    'advisable-function-before)
+                                   ((string= how "around")
+                                    'advisable-function-around)
+                                   ((string= how "after")
+                                    'advisable-function-after))))
+               `(defun ,(intern (string-upcase (format nil "replace-advice-~A" how))
+                                (find-package :cl-advice))
+                    (function old-advice new-advice test if-not-found &key errorp)
+                  (let* ((advise (ensure-advisable-function function))
+                         (loc (member old-advice (,accessor advise) :test test)))
+                    (cond (loc
+                           (setf (car loc) new-advice))
+                          ((eql if-not-found :prepend)
+                           (push new-advice (,accessor advise)))
+                          ((eql if-not-found :append)
+                           (setf (,accessor advise)
+                                 (append (,accessor advise) (list new-advice))))
+                          (errorp
+                           (cerror "Ignore advice replacement"
+                                   "Advice ~A not present in ~A advice for function ~A"
+                                   old-advice ,how function))
+                          (t nil)))))))
+  (define-replace-advice "before")
+  (define-replace-advice "around")
+  (define-replace-advice "after"))
 
 (defun replace-advice (where function old-advice new-advice
-                       &key (test 'eql) (if-not-found :prepend))
+                       &key (test 'eql) (if-not-found :prepend) errorp)
   "Replace OLD-ADVICE with NEW-ADVICE in the advice list for FUNCTION denoted by 
 WHERE. TEST is used to find OLD-ADVICE. IF-NOT-FOUND dictates what to do in the 
 event OLD-ADVICE is not present. It may be one of :prepend, :append, or nil."
@@ -717,7 +709,7 @@ event OLD-ADVICE is not present. It may be one of :prepend, :append, or nil."
            ((:before) 'replace-advice-before)
            ((:around) 'replace-advice-around)
            ((:after) 'replace-advice-after))
-         (list function old-advice new-advice test if-not-found)))
+         (list function old-advice new-advice test if-not-found :errorp errorp)))
 
 (defmacro define-advisory-functions ((to-advise &key (next-arg 'next)) args  &body advice)
   "Define advisable functions and add them to TO-ADVISE.
