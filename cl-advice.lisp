@@ -581,7 +581,11 @@ either directly or through one of its pieces of advice."
                 (push advice-fn (advisable-function-around advise)))
             (setf (car loc) advice-fn))
         (if from-end
-            (setf (cdr (last list)) (list advice-fn))
+            (let ((last (last list))
+                  (list (list advice-fn)))
+              (if last
+                  (setf (cdr last) list)
+                  (setf (advisable-function-around advise) list)))
             (push advice-fn (advisable-function-around advise))))))
 
 (defun add-advice-before (function advice-fn &key allow-duplicates (test 'eql) from-end)
@@ -597,7 +601,11 @@ either directly or through one of its pieces of advice."
                 (push advice-fn (advisable-function-before advise)))
             (setf (car loc) advice-fn))
         (if from-end
-            (setf (cdr (last list)) (list advice-fn))
+            (let ((last (last list))
+                  (list (list advice-fn)))
+              (if last
+                  (setf (cdr last) list)
+                  (setf (advisable-function-before advise) list)))
             (push advice-fn (advisable-function-before advise))))))
 
 (defun add-advice-after (function advice-fn &key allow-duplicates (test 'eql) from-end)
@@ -613,7 +621,11 @@ either directly or through one of its pieces of advice."
                 (push advice-fn (advisable-function-after advise)))
             (setf (car loc) advice-fn))
         (if from-end
-            (setf (cdr (last list)) (list advice-fn))
+            (let ((last (last list))
+                  (list (list advice-fn)))
+              (if last
+                  (setf (cdr last) list)
+                  (setf (advisable-function-after advise) list)))
             (push advice-fn (advisable-function-after advise))))))
 
 (defun add-advice (where function advice-function &key allow-duplicates (test 'eql)
