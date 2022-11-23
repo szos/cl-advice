@@ -754,30 +754,26 @@ expands into
   "List advice for FN, of type TYPE. When PRINT is true, advice will be printed to
 standard output."
   (when-let1 (obj (ensure-advisable-function fn))
-    (case type
-      (:before
-       (let ((fns (advisable-function-before obj)))
-         (when print
-           (format t "~{~A~^~%~}" fns))
-         fns))
-      (:around
-       (let ((fns (advisable-function-around obj)))
-         (when print
-           (format t "~{~A~^~%~}" fns))
-         fns))
-      (:after
-       (let ((fns (advisable-function-after obj)))
-         (when print
-           (format t "~{~A~^~%~}" fns))
-         fns))
-      (otherwise
-       (let ((before (advisable-function-before obj))
-             (around (advisable-function-around obj))
-             (after  (advisable-function-after  obj)))
-         (when print
-           (format t "BEFORE:~%~{~A~^~%~}~%AROUND:~%~{~A~^~%~}~%AFTER:~%~{~A~^~%~}"
-                   before around after))
-         (values before around after))))))
+    (if (eql type :all)
+        (let ((before (advisable-function-before obj))
+              (around (advisable-function-around obj))
+              (after  (advisable-function-after  obj)))
+          (when print
+            (format t
+                    "BEFORE:~%~{~T~S~^~%~}~%AROUND:~%~{~T~S~^~%~}~%AFTER:~%~{~T~S~^~%~}"
+                    before around after))
+          (values before around after))
+        (let ((fns (case type
+                     ((:before)
+                      (advisable-function-before obj))
+                     ((:around)
+                      (advisable-function-around obj))
+                     ((:after)
+                      (advisable-function-after obj))
+                     (otherwise (error "Unknown advice type ~S" type)))))
+          (when print
+            (format t "~{~S~^~%~}" fns))
+          fns))))
 
 (defun remove-advice-all (fn)
   (when-let1 (obj (ensure-advisable-function fn))
